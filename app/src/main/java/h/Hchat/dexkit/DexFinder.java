@@ -2455,9 +2455,9 @@ public class DexFinder {
                     "MicroMsg.ConfigStorage",
                     "shouldProcessEvent db is close :%s");
 
-            sqliteDbWrapperClass = findFirstClassByStrings(
-                    "MicroMsg.SqliteDB",
-                    "sql is null ");
+            // 8.0.77 moved/duplicated the wrapper strings. Prefer a candidate
+            // whose declared methods actually expose mutation-shaped APIs.
+            sqliteDbWrapperClass = findDatabaseWrapperClass();
 
             logDetail("数据库API: kernel="
                     + (mmKernelClass != null ? mmKernelClass.getName() : "null")
@@ -2468,6 +2468,49 @@ public class DexFinder {
         } catch (Throwable e) {
             h.Hchat.utils.HLog.e(TAG + " resolveDatabaseApi 失败: " + e.getMessage(), e);
         }
+    }
+
+    private Class<?> findDatabaseWrapperClass() {
+        List<ClassData> candidates = new ArrayList<>();
+        String[][] anchors = new String[][]{
+                {"MicroMsg.SqliteDB", "sql is null "},
+                {"MicroMsg.SqliteDB"},
+                {"WCDB", "sql is null "}
+        };
+        for (String[] anchor : anchors) {
+            try {
+                for (ClassData data : dexKit.findClass(mkClassUsingStrings(anchor))) {
+                    if (!candidates.contains(data)) candidates.add(data);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        Class<?> fallback = null;
+        for (ClassData data : candidates) {
+            try {
+                Class<?> candidate = KavaReflector.loadClass(data.getName(), classLoader);
+                if (candidate == null) continue;
+                if (fallback == null) fallback = candidate;
+                int inserts = 0;
+                int mutations = 0;
+                for (Method method : KavaReflector.declaredMethods(candidate)) {
+                    Class<?>[] params = method.getParameterTypes();
+                    boolean values = false;
+                    for (Class<?> param : params) {
+                        if (android.content.ContentValues.class.isAssignableFrom(param)) {
+                            values = true;
+                            break;
+                        }
+                    }
+                    if (!values) continue;
+                    if (method.getReturnType() == long.class) inserts++;
+                    if (method.getReturnType() == long.class || method.getReturnType() == int.class) mutations++;
+                }
+                if (inserts > 0 && mutations >= 2) return candidate;
+            } catch (Throwable ignored) {
+            }
+        }
+        return fallback;
     }
 
     public void resolveConversationDeleteApi() {

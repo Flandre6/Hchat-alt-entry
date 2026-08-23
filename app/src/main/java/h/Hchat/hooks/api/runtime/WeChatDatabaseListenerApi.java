@@ -195,7 +195,7 @@ public final class WeChatDatabaseListenerApi {
             return DatabaseChange.DELETE;
         }
         if (!allowObfuscatedWrapperMethod) return null;
-        if (returnType == long.class && isWrapperInsertSignature(params)) {
+        if ((returnType == long.class || returnType == int.class) && isWrapperInsertSignature(params)) {
             return DatabaseChange.INSERT;
         }
         if (returnType == int.class && isWrapperUpdateSignature(params)) {
@@ -208,20 +208,25 @@ public final class WeChatDatabaseListenerApi {
     }
 
     private boolean isWrapperInsertSignature(Class<?>[] params) {
-        return params != null
-                && params.length == 3
-                && params[0] == String.class
-                && params[1] == String.class
-                && ContentValues.class.isAssignableFrom(params[2]);
+        if (params == null || params.length < 2 || params.length > 5) return false;
+        int strings = 0;
+        boolean values = false;
+        for (Class<?> param : params) {
+            if (param == String.class) strings++;
+            if (ContentValues.class.isAssignableFrom(param)) values = true;
+        }
+        return values && strings >= 1;
     }
 
     private boolean isWrapperUpdateSignature(Class<?>[] params) {
-        return params != null
-                && params.length == 4
-                && params[0] == String.class
-                && ContentValues.class.isAssignableFrom(params[1])
-                && params[2] == String.class
-                && params[3] == String[].class;
+        if (params == null || params.length < 3 || params.length > 6) return false;
+        boolean values = false;
+        boolean selection = false;
+        for (Class<?> param : params) {
+            if (ContentValues.class.isAssignableFrom(param)) values = true;
+            if (param == String[].class) selection = true;
+        }
+        return values && selection;
     }
 
     private boolean isWrapperDeleteSignature(Class<?>[] params) {
