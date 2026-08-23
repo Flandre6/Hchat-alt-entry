@@ -47,6 +47,7 @@ public class DexFinder {
     private final SharedPreferences cachePrefs;
     private final String runtimeCacheKey;
     private boolean resolvedAll;
+    private boolean databaseWrapperRescanned;
 
     // AddMsg 处理类
     public List<Class<?>> addMsgClasses = new ArrayList<>();
@@ -2426,7 +2427,8 @@ public class DexFinder {
     // ============ 数据库/联系人公共 API ============
     public void resolveDatabaseApi() {
         try {
-            if (coreStorageGetter != null && sqliteDbWrapperClass != null && configStorageClass != null) return;
+            if (coreStorageGetter != null && sqliteDbWrapperClass != null && configStorageClass != null &&
+                    databaseWrapperRescanned) return;
 
             mmKernelClass = findFirstClassByStrings(
                     "MicroMsg.MMKernel",
@@ -2459,6 +2461,7 @@ public class DexFinder {
             // 8.0.77 moved/duplicated the wrapper strings. Prefer a candidate
             // whose declared methods actually expose mutation-shaped APIs.
             sqliteDbWrapperClass = findDatabaseWrapperClass();
+            databaseWrapperRescanned = true;
 
             logDetail("数据库API: kernel="
                     + (mmKernelClass != null ? mmKernelClass.getName() : "null")
