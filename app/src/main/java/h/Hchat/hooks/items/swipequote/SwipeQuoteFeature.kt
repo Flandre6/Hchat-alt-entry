@@ -110,6 +110,7 @@ private class SwipeQuoteAdapter(
     @Volatile private var adapterBindInstalled = false
     @Volatile private var recyclerInterceptInstalled = false
     @Volatile private var recyclerOnTouchInstalled = false
+    @Volatile private var viewDispatchInstalled = false
     @Volatile private var footerLifecycleInstalled = false
     @Volatile private var retransmitDoneHookInstalled = false
 
@@ -117,9 +118,17 @@ private class SwipeQuoteAdapter(
     fun install(): Boolean {
         val adapterOk = installAdapterBindHook()
         val touchOk = installRecyclerDispatchHook()
+        val dispatchOk = installViewDispatchHook()
         val footerOk = installFooterLifecycleHook()
         val doneOk = installRetransmitDoneHook()
-        return adapterOk && touchOk && footerOk && doneOk
+        logger(
+            "左滑引用安装状态: adapterBind=$adapterOk recyclerIntercept=$recyclerInterceptInstalled " +
+                "recyclerTouch=$recyclerOnTouchInstalled viewDispatch=$dispatchOk footer=$footerOk retransmitDone=$doneOk",
+            null
+        )
+        // Footer/retransmit hooks are optional. The gesture path only needs a
+        // message binder and one of the touch dispatch paths.
+        return adapterOk && (touchOk || dispatchOk)
     }
 
     @Synchronized
@@ -365,6 +374,37 @@ private class SwipeQuoteAdapter(
         return interceptHooked && touchHooked
     }
 
+    /**
+     * 8.0.77 has builds where the chat list is a custom ViewGroup rather than
+     * the stock RecyclerView. Hook the common dispatch entry as a fallback so
+     * the gesture still sees the bound message row.
+     */
+    private fun installViewDispatchHook(): Boolean {
+        if (viewDispatchInstalled) return true
+        val viewGroup = KavaReflector.loadClass("android.view.ViewGroup", context.hostClassLoader())
+            ?: return false
+        val method = KavaReflector.findMethodRecursive(viewGroup, "dispatchTouchEvent", MotionEvent::class.java)
+            ?: return false
+        return runCatching {
+            HookRegistry.get().hook(method, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as? View ?: return
+                    val event = param.args?.getOrNull(0) as? MotionEvent ?: return
+                    if (!isEnabled()) return
+                    val hit = findTargetAt(view, event.x, event.y)
+                    if (handleTouch(view, event, hit, recyclerStates)) {
+                        param.result = true
+                    }
+                }
+            })
+            viewDispatchInstalled = true
+            true
+        }.getOrElse {
+            logger("左滑引用通用触摸分发Hook失败", it)
+            false
+        }
+    }
+
     private fun installFooterLifecycleHook(): Boolean {
         if (footerLifecycleInstalled) return true
         val footerClass = KavaReflector.loadClass(CHAT_FOOTER, context.hostClassLoader()) ?: return false
@@ -504,6 +544,7 @@ private class SwipeQuoteAdapter(
         val root = findRootView(holder) ?: return
         clearSwipeVisual(root)
         rootTargets[root] = QuoteTarget(talker, msgId, msg)
+        logger("左滑引用绑定消息: holder=${holder.javaClass.name} pos=$position root=${root.javaClass.name} msgId=$msgId", null)
     }
 
     private fun handleTouch(
@@ -958,6 +999,8 @@ private class SwipeQuoteAdapter(
             addAll(findMethodsByStrings("MicroMsg.ChattingDataAdapterV3", "holder", "itemView"))
             addAll(findMethodsByStrings("MicroMsg.ChattingDataAdapter", "msgInfo"))
             addAll(findMethodsByStrings("msgInfo"))
+            addAll(findAdapterMethodsFromClasses("MicroMsg.ChattingDataAdapterV3"))
+            addAll(findAdapterMethodsFromClasses("MicroMsg.ChattingDataAdapter"))
         }
         val method = matches.asSequence()
             .filter(::isAdapterBindCandidate)
@@ -971,6 +1014,29 @@ private class SwipeQuoteAdapter(
         return method
     }
 
+    private fun findAdapterMethodsFromClasses(anchor: String): List<Method> {
+        return runCatching {
+            val query = org.luckypray.dexkit.query.FindClass().apply {
+                matcher(org.luckypray.dexkit.query.matchers.ClassMatcher().apply {
+                    usingStrings(anchor)
+                })
+            }
+            context.dexKitBridge().findClass(query).flatMap { data ->
+                val clazz = KavaReflector.loadClass(data.name, context.hostClassLoader()) ?: return@flatMap emptyList()
+                val methods = ArrayList<Method>()
+                var current: Class<*>? = clazz
+                while (current != null && current != Any::class.java) {
+                    methods.addAll(KavaReflector.declaredMethods(current))
+                    current = current.superclass
+                }
+                methods
+            }
+        }.getOrElse {
+            logger("左滑引用扫描聊天适配器类失败: $anchor", it)
+            emptyList()
+        }
+    }
+
     private fun adapterBindScore(method: Method): Int {
         var score = 0
         if (method.declaringClass.name.contains("chat", ignoreCase = true)) score += 100
@@ -982,7 +1048,7 @@ private class SwipeQuoteAdapter(
 
     private fun isAdapterBindCandidate(method: Method): Boolean {
         val types = method.parameterTypes
-        return types.size == 2 && types[1] == Integer.TYPE && isLikelyViewHolderClass(types[0])
+        return types.size in 2..3 && types[1] == Integer.TYPE && isLikelyViewHolderClass(types[0])
     }
 
     private fun findMethodsByStrings(vararg strings: String): List<Method> {
@@ -1196,6 +1262,30 @@ private class SwipeQuoteAdapter(
             findTargetFromViewTree(child)?.let { target ->
                 return QuoteHit(child, target)
             }
+        }
+        return null
+    }
+
+    private fun findTargetAt(view: View, x: Float, y: Float): QuoteHit? {
+        val target = findTargetFromViewTreeAt(view, x, y) ?: return null
+        var row: View = view
+        var current: View? = view
+        while (current != null) {
+            if (rootTargets.containsKey(current)) row = current
+            current = current.parent as? View
+        }
+        return QuoteHit(row, target)
+    }
+
+    private fun findTargetFromViewTreeAt(view: View, x: Float, y: Float): QuoteTarget? {
+        rootTargets[view]?.let { return it }
+        if (view !is ViewGroup) return null
+        for (i in view.childCount - 1 downTo 0) {
+            val child = view.getChildAt(i) ?: continue
+            val cx = x + view.scrollX - child.left
+            val cy = y + view.scrollY - child.top
+            if (cx < 0f || cy < 0f || cx > child.width || cy > child.height) continue
+            findTargetFromViewTreeAt(child, cx, cy)?.let { return it }
         }
         return null
     }

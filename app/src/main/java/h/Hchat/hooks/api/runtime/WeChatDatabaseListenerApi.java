@@ -10,7 +10,9 @@ import h.Hchat.hooks.core.HookRegistry;
 import h.Hchat.utils.KavaReflector;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -257,11 +259,12 @@ public final class WeChatDatabaseListenerApi {
         for (Method method : KavaReflector.declaredMethods(dbClass)) {
             String operation = operationOf(method, allowObfuscatedWrapperMethod);
             boolean query = isRawQueryMethod(method);
-            if (operation == null && !query) continue;
+            boolean potentialMutation = allowObfuscatedWrapperMethod && isPotentialWrapperMutationMethod(method);
+            if (operation == null && !query && !potentialMutation) continue;
             if (hookedMethods.contains(method)) {
-                if (allowObfuscatedWrapperMethod && operation != null) {
+                if (allowObfuscatedWrapperMethod && (operation != null || potentialMutation)) {
                     hookedWrapperMutationMethods.add(method);
-                    if (DatabaseChange.INSERT.equals(operation)) {
+                    if (DatabaseChange.INSERT.equals(operation) || potentialMutation) {
                         hookedWrapperInsertMethods.add(method);
                     }
                 }
@@ -289,9 +292,9 @@ public final class WeChatDatabaseListenerApi {
                     }
                 });
                 hookedMethods.add(method);
-                if (allowObfuscatedWrapperMethod && operation != null) {
+                if (allowObfuscatedWrapperMethod && (operation != null || potentialMutation)) {
                     hookedWrapperMutationMethods.add(method);
-                    if (DatabaseChange.INSERT.equals(operation)) {
+                    if (DatabaseChange.INSERT.equals(operation) || potentialMutation) {
                         hookedWrapperInsertMethods.add(method);
                     }
                 }
@@ -443,8 +446,27 @@ public final class WeChatDatabaseListenerApi {
         return false;
     }
 
+    private boolean isPotentialWrapperMutationMethod(Method method) {
+        if (method == null || method.getReturnType() == void.class) return false;
+        Class<?> returnType = method.getReturnType();
+        if (returnType != long.class && returnType != int.class && returnType != boolean.class
+                && returnType != Boolean.class && returnType != Long.class && returnType != Integer.class) return false;
+        Class<?>[] params = method.getParameterTypes();
+        if (params.length < 2 || params.length > 8) return false;
+        boolean string = false;
+        boolean object = false;
+        for (Class<?> type : params) {
+            if (type == String.class) string = true;
+            if (!type.isPrimitive() && type != String.class && type != String[].class
+                    && type != Object[].class && type != Class.class) object = true;
+        }
+        return string && object;
+    }
+
     private void dispatchIfSuccessful(String operation, Method method, Object[] args, Object result) {
         if (listeners.isEmpty() || args == null) return;
+        if (operation == null) operation = inferOperation(method, args);
+        if (operation == null) return;
         long resultValue = resultToLong(result);
         if (DatabaseChange.INSERT.equals(operation)) {
             if (resultValue < 0) return;
@@ -524,8 +546,55 @@ public final class WeChatDatabaseListenerApi {
     private ContentValues contentValuesArg(Object[] args) {
         if (args == null) return null;
         for (Object value : args) {
-            if (value instanceof ContentValues) return (ContentValues) value;
+            ContentValues converted = coerceContentValues(value, 0,
+                    java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Object, Boolean>()));
+            if (converted != null) return converted;
         }
+        return null;
+    }
+
+    private ContentValues coerceContentValues(Object value, int depth, Set<Object> visited) {
+        if (value == null || depth > 3 || !visited.add(value)) return null;
+        if (value instanceof ContentValues) return (ContentValues) value;
+        if (value instanceof Map) {
+            ContentValues out = new ContentValues();
+            for (Object raw : ((Map<?, ?>) value).entrySet()) {
+                Map.Entry<?, ?> entry = (Map.Entry<?, ?>) raw;
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    Object item = entry.getValue();
+                    if (item instanceof byte[]) out.put(String.valueOf(entry.getKey()), (byte[]) item);
+                    else if (item instanceof Integer) out.put(String.valueOf(entry.getKey()), (Integer) item);
+                    else if (item instanceof Long) out.put(String.valueOf(entry.getKey()), (Long) item);
+                    else if (item instanceof Float) out.put(String.valueOf(entry.getKey()), (Float) item);
+                    else if (item instanceof Double) out.put(String.valueOf(entry.getKey()), (Double) item);
+                    else out.put(String.valueOf(entry.getKey()), String.valueOf(item));
+                }
+            }
+            return out;
+        }
+        Class<?> type = value.getClass();
+        if (type.getName().startsWith("java.") || type.getName().startsWith("android.")) return null;
+        for (Field field : KavaReflector.declaredFields(type)) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) || field.getType().isPrimitive()) continue;
+            ContentValues nested = coerceContentValues(KavaReflector.readField(field, value), depth + 1, visited);
+            if (nested != null) return nested;
+        }
+        for (String name : new String[]{"getValues", "contentValues", "toContentValues", "getContentValues"}) {
+            ContentValues nested = coerceContentValues(KavaReflector.invokeMethod(value, name), depth + 1, visited);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    private String inferOperation(Method method, Object[] args) {
+        if (method == null) return null;
+        String name = method.getName().toLowerCase();
+        if (name.contains("delete") || name.equals("d")) return DatabaseChange.DELETE;
+        if (name.contains("update") || name.equals("updatewithonconflict") || name.equals("u")) return DatabaseChange.UPDATE;
+        if (name.contains("insert") || name.contains("replace") || name.equals("i")) return DatabaseChange.INSERT;
+        if (contentValuesArg(args) == null) return null;
+        if (stringArrayArg(args) != null) return DatabaseChange.UPDATE;
+        for (Object arg : args) if (arg instanceof String) return DatabaseChange.INSERT;
         return null;
     }
 

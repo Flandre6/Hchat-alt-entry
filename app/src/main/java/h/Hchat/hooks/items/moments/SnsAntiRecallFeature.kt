@@ -168,7 +168,8 @@ private class SnsAntiRecallHooker(
         if (method.returnType != Integer.TYPE) return false
         val named = method.name == "update" || method.name == "updateWithOnConflict"
         return (named && method.parameterTypes.any { ContentValues::class.java.isAssignableFrom(it) }) ||
-            isObfuscatedUpdateSignature(method.parameterTypes)
+            isObfuscatedUpdateSignature(method.parameterTypes) ||
+            (method.name.contains("update", ignoreCase = true) && method.parameterTypes.size in 2..8)
     }
 
     private fun isSnsInsertOrReplaceMethod(method: Method): Boolean {
@@ -201,7 +202,20 @@ private class SnsAntiRecallHooker(
     }
 
     private fun isSnsWriteMethod(method: Method): Boolean {
-        return isSnsUpdateMethod(method) || isSnsInsertOrReplaceMethod(method)
+        return isSnsUpdateMethod(method) || isSnsInsertOrReplaceMethod(method) ||
+            isPotentialWrapperWriteMethod(method)
+    }
+
+    private fun isPotentialWrapperWriteMethod(method: Method): Boolean {
+        val result = method.returnType
+        if (result != Long::class.javaPrimitiveType && result != Integer.TYPE) return false
+        val types = method.parameterTypes
+        if (types.size !in 2..8) return false
+        val hasTable = types.any { it == String::class.java }
+        val hasPayload = types.any {
+            !it.isPrimitive && it != String::class.java && it != Array<String>::class.java
+        }
+        return hasTable && hasPayload
     }
 
     private fun isSnsRawQueryMethod(method: Method): Boolean {
@@ -558,7 +572,40 @@ private class SnsAntiRecallHooker(
 
     private fun contentValuesArg(args: Array<Any?>?): ContentValues? {
         if (args == null) return null
-        return args.firstNotNullOfOrNull { it as? ContentValues }
+        return args.firstNotNullOfOrNull {
+            coerceContentValues(it, 0, Collections.newSetFromMap(java.util.IdentityHashMap()))
+        }
+    }
+
+    private fun coerceContentValues(value: Any?, depth: Int, visited: MutableSet<Any>): ContentValues? {
+        if (value == null || depth > 3 || !visited.add(value)) return null
+        if (value is ContentValues) return value
+        if (value is kotlin.collections.Map<*, *>) {
+            val out = ContentValues()
+            value.forEach { (key, item) ->
+                if (key != null && item != null) {
+                    when (item) {
+                        is ByteArray -> out.put(key.toString(), item)
+                        is Int -> out.put(key.toString(), item)
+                        is Long -> out.put(key.toString(), item)
+                        is Float -> out.put(key.toString(), item)
+                        is Double -> out.put(key.toString(), item)
+                        else -> out.put(key.toString(), item.toString())
+                    }
+                }
+            }
+            return out
+        }
+        val type = value.javaClass
+        if (type.name.startsWith("java.") || type.name.startsWith("android.")) return null
+        for (field in KavaReflector.declaredFields(type)) {
+            if (java.lang.reflect.Modifier.isStatic(field.modifiers) || field.type.isPrimitive) continue
+            coerceContentValues(KavaReflector.readField(field, value), depth + 1, visited)?.let { return it }
+        }
+        arrayOf("getValues", "contentValues", "toContentValues", "getContentValues").forEach { name ->
+            coerceContentValues(KavaReflector.invokeMethod(value, name), depth + 1, visited)?.let { return it }
+        }
+        return null
     }
 
     private fun isSnsInfoTable(table: String?): Boolean {
