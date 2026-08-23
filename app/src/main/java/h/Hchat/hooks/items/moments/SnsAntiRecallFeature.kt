@@ -6,8 +6,10 @@ import android.database.Cursor
 import de.robv.android.xposed.XC_MethodHook
 import h.Hchat.dexkit.DexMethodCache
 import h.Hchat.hooks.core.BaseFeature
+import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.core.HookRegistry
+import h.Hchat.event.Events
 import h.Hchat.hooks.items.momentsfake.MomentsFakeInteractionNodeIdentity
 import h.Hchat.preferences.HchatStorage
 import h.Hchat.utils.HLog
@@ -34,6 +36,10 @@ class SnsAntiRecallFeature : BaseFeature() {
 
     override fun onFeatureInstall(context: FeatureContext) {
         hooker = SnsAntiRecallHooker(context).also { it.install() }
+        // The database wrapper may be resolved after feature installation.
+        subscribe(Events.DexReady::class.java) {
+            DexInstallScheduler.schedule(ID, name()) { hooker?.install() == true }
+        }
     }
 
     override fun onFeatureDestroy(context: FeatureContext) {
@@ -160,21 +166,38 @@ private class SnsAntiRecallHooker(
 
     private fun isSnsUpdateMethod(method: Method): Boolean {
         if (method.returnType != Integer.TYPE) return false
-        if (method.name != "update" && method.name != "updateWithOnConflict") return false
-        return method.parameterTypes.any { ContentValues::class.java.isAssignableFrom(it) }
+        val named = method.name == "update" || method.name == "updateWithOnConflict"
+        return named && method.parameterTypes.any { ContentValues::class.java.isAssignableFrom(it) } ||
+            isObfuscatedUpdateSignature(method.parameterTypes)
     }
 
     private fun isSnsInsertOrReplaceMethod(method: Method): Boolean {
-        if (method.returnType != java.lang.Long.TYPE) return false
+        if (method.returnType != java.lang.Long.TYPE && method.returnType != Integer.TYPE) return false
         val name = method.name
-        if (name != "insert" &&
+        if ((name != "insert" &&
             name != "insertWithOnConflict" &&
             name != "replace" &&
-            name != "replaceOrThrow"
-        ) {
+            name != "replaceOrThrow") && !isObfuscatedInsertSignature(method.parameterTypes)) {
             return false
         }
         return method.parameterTypes.any { ContentValues::class.java.isAssignableFrom(it) }
+    }
+
+    private fun isObfuscatedInsertSignature(types: Array<Class<*>>): Boolean {
+        if (types.size < 2 || types.size > 5) return false
+        var strings = 0
+        var values = false
+        types.forEach {
+            if (it == String::class.java) strings++
+            if (ContentValues::class.java.isAssignableFrom(it)) values = true
+        }
+        return values && strings >= 1
+    }
+
+    private fun isObfuscatedUpdateSignature(types: Array<Class<*>>): Boolean {
+        if (types.size < 3 || types.size > 6) return false
+        return types.any { ContentValues::class.java.isAssignableFrom(it) } &&
+            types.any { it.isArray && it.componentType == String::class.java }
     }
 
     private fun isSnsWriteMethod(method: Method): Boolean {
@@ -709,7 +732,7 @@ private class SnsAntiRecallHooker(
             1, 2, 3, 4, 5, 9, 10, 12, 13, 14, 15, 18, 19, 26, 28, 30, 34, 36, 41, 42, 47, 54
         )
         private val SNS_SELECT_REGEX = Regex(
-            "select\\s+\\*,\\s*rowid\\s+from\\s+SnsInfo",
+            "select\\s+\\*\\s*(?:,\\s*rowid\\s*)?from\\s+(?:main\\.)?SnsInfo",
             setOf(RegexOption.IGNORE_CASE)
         )
         private val PROFILE_QUERY_REGEX = Regex(

@@ -953,15 +953,31 @@ private class SwipeQuoteAdapter(
         DexMethodCache.load(methodCachePrefs, methodCacheKey, context.hostClassLoader(), "adapter_bind")
             ?.takeIf { isAdapterBindCandidate(it) }
             ?.let { return it }
-        val matches = findMethodsByStrings("MicroMsg.ChattingDataAdapterV3", "_onBindViewHolder[", "msgInfo")
-            .ifEmpty { findMethodsByStrings("MicroMsg.ChattingDataAdapterV3", "holder", "itemView") }
-        val method = matches.firstOrNull { isAdapterBindCandidate(it) }
+        val matches = linkedSetOf<Method>().apply {
+            addAll(findMethodsByStrings("MicroMsg.ChattingDataAdapterV3", "_onBindViewHolder[", "msgInfo"))
+            addAll(findMethodsByStrings("MicroMsg.ChattingDataAdapterV3", "holder", "itemView"))
+            addAll(findMethodsByStrings("MicroMsg.ChattingDataAdapter", "msgInfo"))
+            addAll(findMethodsByStrings("msgInfo"))
+        }
+        val method = matches.asSequence()
+            .filter(::isAdapterBindCandidate)
+            .sortedByDescending(::adapterBindScore)
+            .firstOrNull()
         if (method != null) {
             DexMethodCache.save(methodCachePrefs, methodCacheKey, "adapter_bind", method)
         } else {
             DexMethodCache.clear(methodCachePrefs, methodCacheKey, "adapter_bind")
         }
         return method
+    }
+
+    private fun adapterBindScore(method: Method): Int {
+        var score = 0
+        if (method.declaringClass.name.contains("chat", ignoreCase = true)) score += 100
+        if (isRecyclerViewHolder(method.parameterTypes[0])) score += 20
+        if (findRootField(method.parameterTypes[0]) != null) score += 10
+        if (method.name.contains("bind", ignoreCase = true)) score += 5
+        return score
     }
 
     private fun isAdapterBindCandidate(method: Method): Boolean {

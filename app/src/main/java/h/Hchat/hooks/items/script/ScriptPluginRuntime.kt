@@ -1651,6 +1651,9 @@ object ScriptPluginRuntime {
             eval(
                 """
                 import de.robv.android.xposed.XC_MethodHook;
+                // Compatibility for legacy BeanShell plugins that refer to
+                // the nested callback type by its short name.
+                import de.robv.android.xposed.XC_MethodHook.MethodHookParam;
                 import de.robv.android.xposed.XposedBridge;
                 import de.robv.android.xposed.XposedHelpers;
                 import h.Hchat.dexkit.DexBridgeHolder;
