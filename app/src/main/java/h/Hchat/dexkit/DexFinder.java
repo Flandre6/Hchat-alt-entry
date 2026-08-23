@@ -187,6 +187,7 @@ public class DexFinder {
     public Method coreStorageGetter;
     public Class<?> configStorageClass;
     public Class<?> sqliteDbWrapperClass;
+    public final List<Class<?>> sqliteDbWrapperCandidates = new ArrayList<>();
     public Method conversationDeleteMethod;
     public Method messageClearByTalkerMethod;
     public Method messageClearBatchMethod;
@@ -2471,6 +2472,7 @@ public class DexFinder {
     }
 
     private Class<?> findDatabaseWrapperClass() {
+        sqliteDbWrapperCandidates.clear();
         List<ClassData> candidates = new ArrayList<>();
         String[][] anchors = new String[][]{
                 {"MicroMsg.SqliteDB", "sql is null "},
@@ -2485,15 +2487,19 @@ public class DexFinder {
             } catch (Throwable ignored) {
             }
         }
-        Class<?> fallback = null;
+        Class<?> best = null;
+        int bestScore = -1;
         for (ClassData data : candidates) {
             try {
                 Class<?> candidate = KavaReflector.loadClass(data.getName(), classLoader);
                 if (candidate == null) continue;
-                if (fallback == null) fallback = candidate;
+                if (!sqliteDbWrapperCandidates.contains(candidate)) sqliteDbWrapperCandidates.add(candidate);
                 int inserts = 0;
                 int mutations = 0;
-                for (Method method : KavaReflector.declaredMethods(candidate)) {
+                int score = 0;
+                Class<?> current = candidate;
+                while (current != null && current != Object.class) {
+                for (Method method : KavaReflector.declaredMethods(current)) {
                     Class<?>[] params = method.getParameterTypes();
                     boolean values = false;
                     for (Class<?> param : params) {
@@ -2505,12 +2511,19 @@ public class DexFinder {
                     if (!values) continue;
                     if (method.getReturnType() == long.class) inserts++;
                     if (method.getReturnType() == long.class || method.getReturnType() == int.class) mutations++;
+                    if (method.getReturnType() != void.class) score++;
                 }
-                if (inserts > 0 && mutations >= 2) return candidate;
+                    current = current.getSuperclass();
+                }
+                score += inserts * 4 + mutations;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
             } catch (Throwable ignored) {
             }
         }
-        return fallback;
+        return best;
     }
 
     public void resolveConversationDeleteApi() {
@@ -3511,6 +3524,8 @@ public class DexFinder {
             coreStorageClass = loadClass("coreStorageClass");
             configStorageClass = loadClass("configStorageClass");
             sqliteDbWrapperClass = loadClass("sqliteDbWrapperClass");
+            sqliteDbWrapperCandidates.clear();
+            if (sqliteDbWrapperClass != null) sqliteDbWrapperCandidates.add(sqliteDbWrapperClass);
             conversationDeleteMethod = loadMethod("conversationDeleteMethod");
             messageClearByTalkerMethod = loadMethod("messageClearByTalkerMethod");
             messageClearBatchMethod = loadMethod("messageClearBatchMethod");

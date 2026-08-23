@@ -167,7 +167,7 @@ private class SnsAntiRecallHooker(
     private fun isSnsUpdateMethod(method: Method): Boolean {
         if (method.returnType != Integer.TYPE) return false
         val named = method.name == "update" || method.name == "updateWithOnConflict"
-        return named && method.parameterTypes.any { ContentValues::class.java.isAssignableFrom(it) } ||
+        return (named && method.parameterTypes.any { ContentValues::class.java.isAssignableFrom(it) }) ||
             isObfuscatedUpdateSignature(method.parameterTypes)
     }
 

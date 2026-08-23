@@ -152,10 +152,15 @@ public final class WeChatDatabaseListenerApi {
             hookedWrapperInsertMethods.clear();
         }
         int count = 0;
-        Class<?> cur = wrapperClass;
-        while (cur != null && cur != Object.class) {
-            count += hookDatabaseClass(cur, true);
-            cur = cur.getSuperclass();
+        java.util.List<Class<?>> wrappers = new java.util.ArrayList<>();
+        if (dexFinder != null) wrappers.addAll(dexFinder.sqliteDbWrapperCandidates);
+        if (wrapperClass != null && !wrappers.contains(wrapperClass)) wrappers.add(wrapperClass);
+        for (Class<?> wrapper : wrappers) {
+            Class<?> cur = wrapper;
+            while (cur != null && cur != Object.class) {
+                count += hookDatabaseClass(cur, true);
+                cur = cur.getSuperclass();
+            }
         }
         count += hookNamedDatabaseClass("com.tencent.wcdb.database.SQLiteDatabase");
         count += hookNamedDatabaseClass("com.tencent.wcdb.compat.SQLiteDatabase");
