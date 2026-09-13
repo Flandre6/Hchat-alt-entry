@@ -33,6 +33,7 @@ import h.Hchat.hooks.items.hidemenu.HideChatMenuFeature
 import h.Hchat.hooks.items.hotupdate.DisableHotUpdateFeature
 import h.Hchat.hooks.items.hometextcolor.HomeTextColorFeature
 import h.Hchat.hooks.items.inputhint.InputHintFeature
+import h.Hchat.hooks.items.inputtoolbar.InputToolbarFeature
 import h.Hchat.hooks.items.keepalive.WeChatKeepAliveFeature
 import h.Hchat.hooks.items.keywordnotify.KeywordNotificationFeature
 import h.Hchat.hooks.items.membertitle.MemberTitleFeature
@@ -149,6 +150,7 @@ object FeatureRegistry {
             .register(MessageBlockFeature())
             .register(FakeLocationFeature())
             .register(GameEmojiFeature())
+            .register(InputToolbarFeature())
             .register(FakeMiniProgramBaseLibFeature())
             .register(SkipMiniProgramVideoAdsFeature())
             .register(SkipGlobalMiniProgramSplashAdsFeature())
