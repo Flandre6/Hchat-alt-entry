@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.os.Build
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -13,14 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,9 +35,11 @@ import h.Hchat.hooks.items.monetgenerator.engine.MonetGenerationStage
 import h.Hchat.hooks.items.monetgenerator.engine.MonetTabStyle
 import h.Hchat.hooks.items.monetgenerator.engine.MonetUserScope
 import h.Hchat.ui.FeatureSettingsProvider
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 @Composable
 internal fun MonetModuleGeneratorMiuixPage(
@@ -303,12 +306,7 @@ private fun MonetGenerationStatus(state: MonetGeneratorPageState) {
                 val completed = state.progress.completed
                 val total = state.progress.total
                 if (completed != null && total != null) {
-                    LinearProgressIndicator(
-                        progress = { completed.toFloat() / total.coerceAtLeast(1) },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MiuixTheme.colorScheme.primary,
-                        trackColor = MiuixTheme.colorScheme.secondaryVariant
-                    )
+                    MonetProgressIndicator(completed.toFloat() / total.coerceAtLeast(1))
                     Text(
                         "$completed/$total",
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -316,11 +314,7 @@ private fun MonetGenerationStatus(state: MonetGeneratorPageState) {
                         fontSize = 12.sp
                     )
                 } else {
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MiuixTheme.colorScheme.primary,
-                        trackColor = MiuixTheme.colorScheme.secondaryVariant
-                    )
+                    MonetProgressIndicator(null)
                 }
             }
 
@@ -344,6 +338,28 @@ private fun MonetGenerationStatus(state: MonetGeneratorPageState) {
                     fontSize = 12.sp
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MonetProgressIndicator(progress: Float?) {
+    val shape = RoundedCornerShape(3.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(shape)
+            .background(MiuixTheme.colorScheme.secondaryVariant)
+    ) {
+        if (progress != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .height(6.dp)
+                    .clip(shape)
+                    .background(MiuixTheme.colorScheme.primary)
+            )
         }
     }
 }
