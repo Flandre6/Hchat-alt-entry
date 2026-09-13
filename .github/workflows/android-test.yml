@@ -67,7 +67,7 @@ jobs:
           HCAT_STORE_PASSWORD: ${{ secrets.HCAT_STORE_PASSWORD }}
           HCAT_KEY_ALIAS: ${{ secrets.HCAT_KEY_ALIAS }}
           HCAT_KEY_PASSWORD: ${{ secrets.HCAT_KEY_PASSWORD }}
-        run: sh ./gradlew :app:assembleRelease --build-cache --parallel --no-watch-fs -x lintVitalRelease
+        run: sh ./gradlew --project-prop hchat.modernXposed=true :app:assembleRelease --build-cache --parallel --no-watch-fs -x lintVitalRelease
 
       - name: 上传测试 APK
         uses: actions/upload-artifact@v4

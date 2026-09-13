@@ -6,7 +6,7 @@ plugins {
 
 val modernXposed = providers.gradleProperty("hchat.modernXposed")
     .map { it.toBoolean() }
-    .orElse(false)
+    .orElse(true)
     .get()
 
 val releaseStoreFile = rootProject.file("app/keystore/。。.jks")
