@@ -11,6 +11,7 @@ import h.Hchat.hooks.items.autovieworiginal.AutoViewOriginalFeature
 import h.Hchat.hooks.items.backgroundbeauty.BackgroundBeautyFeature
 import h.Hchat.hooks.items.callmedialimit.CallMediaLimitFeature
 import h.Hchat.hooks.items.callmedialimit.CallRingtoneBlockFeature
+import h.Hchat.hooks.items.chattoolbar.ChatToolbarFeature
 import h.Hchat.hooks.items.chattime.ChatTimeStyleFeature
 import h.Hchat.hooks.items.conversationgroup.ConversationGroupFeature
 import h.Hchat.hooks.items.custombottombar.CustomBottomBarFeature
@@ -100,6 +101,7 @@ object FeatureRegistry {
         return FeatureManager()
             .register(SettingsFeature())
             .register(WechatApiFeature())
+            .register(ChatToolbarFeature())
             .register(FloatingShortcutFeature())
             .register(CustomBottomBarFeature())
             .register(RoundAvatarFeature())
