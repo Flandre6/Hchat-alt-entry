@@ -96,6 +96,7 @@ object HchatUpdateChecker {
     }
 
     /** 主进程低频后台检查；不阻塞微信启动线程。 */
+    @JvmStatic
     fun scheduleCheck(context: Context, currentVersion: String) {
         val appContext = context.applicationContext ?: context
         val prefs = HchatStorage.preferences(appContext, PREFS_NAME)
