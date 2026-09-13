@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.compose")
 }
 
+val modernXposed = providers.gradleProperty("hchat.modernXposed")
+    .map { it.toBoolean() }
+    .orElse(false)
+    .get()
+
 val releaseStoreFile = rootProject.file("app/keystore/。。.jks")
 val releaseStorePassword = providers.environmentVariable("HCAT_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("HCAT_KEY_ALIAS").orNull
@@ -16,6 +21,13 @@ val hasReleaseSigning = releaseStoreFile.isFile &&
 android {
     namespace = "h.Hchat"
     compileSdk = 37
+
+    if (modernXposed) {
+        sourceSets.getByName("main").java.directories.add("src/modern/java")
+        sourceSets.getByName("main").resources.directories.add("src/modern/resources")
+    } else {
+        sourceSets.getByName("main").assets.srcDir("src/legacy/assets")
+    }
 
     val autoVersionCode = System.getenv("HCAT_VERSION_CODE")?.toIntOrNull() ?: 1
     val autoVersionName = System.getenv("HCAT_VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0.0"
@@ -109,7 +121,11 @@ tasks.matching { it.name == "preReleaseBuild" }.configureEach {
 }
 
 dependencies {
-    compileOnly("de.robv.android.xposed:api:82")
+    if (modernXposed) {
+        compileOnly("io.github.libxposed:api:102.0.0")
+    } else {
+        compileOnly("de.robv.android.xposed:api:82")
+    }
     implementation("io.github.billywei01:fastkv:3.0.1")
     implementation("org.luckypray:dexkit:2.0.1")
     implementation("com.github.REAndroid:ARSCLib:V1.3.8")
