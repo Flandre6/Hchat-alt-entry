@@ -285,6 +285,7 @@ import h.Hchat.hooks.items.hotupdate.DisableHotUpdateFeature
 import h.Hchat.hooks.items.hotupdate.DisableHotUpdateSettings
 import h.Hchat.hooks.items.hometextcolor.HomeTextColorFeature
 import h.Hchat.hooks.items.hometextcolor.HomeTextColorSettings
+import h.Hchat.hooks.items.homesidepanel.HomeSidePanelFeature
 import h.Hchat.hooks.items.inputhint.InputHintFeature
 import h.Hchat.hooks.items.inputhint.InputHintSettings
 import h.Hchat.hooks.items.inputhint.InputHintStats
@@ -731,6 +732,7 @@ internal fun FeatureSettingsPage(
         BackgroundBeautyFeature.ID -> BackgroundBeautyMiuixPage(context, provider, onBack)
         MessageTextColorFeature.ID -> MessageTextColorMiuixPage(context, provider, onBack)
         HomeTextColorFeature.ID -> HomeTextColorMiuixPage(context, provider, onBack)
+        HomeSidePanelFeature.ID -> HomeSidePanelMiuixPage(context, provider, onBack)
         ChatTimeStyleFeature.ID -> ChatTimeStyleMiuixPage(context, provider, onBack)
         ChatToolbarFeature.ID -> ChatToolbarMiuixPage(context, provider, onBack)
         InputHintFeature.ID -> InputHintMiuixPage(context, provider, onBack)

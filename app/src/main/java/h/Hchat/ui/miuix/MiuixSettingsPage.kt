@@ -287,6 +287,7 @@ import h.Hchat.hooks.items.hotupdate.DisableHotUpdateFeature
 import h.Hchat.hooks.items.hotupdate.DisableHotUpdateSettings
 import h.Hchat.hooks.items.hometextcolor.HomeTextColorFeature
 import h.Hchat.hooks.items.hometextcolor.HomeTextColorSettings
+import h.Hchat.hooks.items.homesidepanel.HomeSidePanelFeature
 import h.Hchat.hooks.items.inputhint.InputHintFeature
 import h.Hchat.hooks.items.inputhint.InputHintSettings
 import h.Hchat.hooks.items.inputhint.InputHintStats
@@ -3106,6 +3107,7 @@ internal fun practicalFeatureGroups(
                 MessageBubbleFeature.ID,
                 MessageTextColorFeature.ID,
                 HomeTextColorFeature.ID,
+                HomeSidePanelFeature.ID,
                 ChatTimeStyleFeature.ID,
                 InputHintFeature.ID,
                 HideChatAvatarFeature.ID,
@@ -3916,6 +3918,7 @@ internal fun featureSubSearchTerms(featureId: String): List<String> {
         MessageBubbleFeature.ID -> listOf("消息气泡", "聊天气泡", "自定义气泡", "左侧气泡", "右侧气泡", "红包气泡", "转账气泡", "系统消息气泡", "浅色模式", "深色模式", "NinePatch", "九宫格")
         MessageTextColorFeature.ID -> listOf("消息文本颜色", "文字颜色", "聊天气泡文字", "取色器", "浅色模式", "深色模式")
         HomeTextColorFeature.ID -> listOf("首页文字颜色", "标题颜色", "副标题颜色", "渐变文字", "微信首页", "通讯录", "发现", "我")
+        HomeSidePanelFeature.ID -> listOf("首页侧边栏", "主页侧边栏", "侧边栏", "OKK", "快捷面板", "悬浮面板", "首页滑出面板")
         SecureMessageSettings.SEND_ID -> listOf("安全消息", "安全标记", "sec_msg_node", "文字", "链接", "卡片", "图片", "视频", "表情包")
         SecureMessageSettings.ANTI_ID -> listOf("反安全消息", "安全标记", "sec_msg_node", "恢复长按菜单")
         ChatTimeStyleFeature.ID -> listOf("会话时间样式", "聊天时间", "微信时间", "自定义时间", "隐藏时间", "时间格式")
