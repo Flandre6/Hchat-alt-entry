@@ -73,6 +73,8 @@ import h.Hchat.hooks.items.quickread.QuickMarkReadFeature
 import h.Hchat.hooks.items.quickterminate.QuickTerminateFeature
 import h.Hchat.hooks.items.realtail.RealNameTailFeature
 import h.Hchat.hooks.items.roundavatar.RoundAvatarFeature
+import h.Hchat.hooks.items.securemessage.AntiSecureMessageFeature
+import h.Hchat.hooks.items.securemessage.SendSecureMessageFeature
 import h.Hchat.hooks.items.script.ScriptPluginFeature
 import h.Hchat.hooks.items.scheduledtask.ScheduledTaskFeature
 import h.Hchat.hooks.items.selectedmessages.SelectedMessagesFeature
@@ -83,6 +85,7 @@ import h.Hchat.hooks.items.swipequote.SwipeQuoteFeature
 import h.Hchat.hooks.items.tablet.WeChatTabletFeature
 import h.Hchat.hooks.items.textspeech.TextSpeechFeature
 import h.Hchat.hooks.items.textvoice.TextVoiceFeature
+import h.Hchat.hooks.items.transparentavatar.UploadTransparentAvatarFeature
 import h.Hchat.hooks.items.typingreport.TypingReportBlockFeature
 import h.Hchat.hooks.items.voiceforward.VoiceForwardFeature
 import h.Hchat.hooks.items.hchatextra.HchatExtraFeature
@@ -102,6 +105,7 @@ object FeatureRegistry {
             .register(CustomBottomBarFeature())
             .register(RoundAvatarFeature())
             .register(CustomFriendAvatarFeature())
+            .register(UploadTransparentAvatarFeature())
             .register(RealNameTailFeature())
             .register(MemberTitleFeature())
             .register(AutoRedPacketFeature())
@@ -177,6 +181,8 @@ object FeatureRegistry {
             .register(VoiceForwardFeature())
             .register(SelectedMessagesFeature())
             .register(MessageForwardFeature())
+            .register(SendSecureMessageFeature())
+            .register(AntiSecureMessageFeature())
             .register(ScheduledTaskFeature())
             .register(FakeScanCameraFeature())
             .register(ProtobufPacketFeature())

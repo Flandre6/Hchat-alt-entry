@@ -27,6 +27,8 @@ import h.Hchat.dexkit.DexBridgeHolder;
 import h.Hchat.event.EventBus;
 import h.Hchat.ui.UIRegistry;
 import h.Hchat.utils.HLog;
+import h.Hchat.update.HchatUpdateChecker;
+import h.Hchat.BuildConfig;
 
 import org.luckypray.dexkit.DexKitBridge;
 
@@ -108,6 +110,7 @@ public class ModuleEntry implements IXposedHookLoadPackage {
                         Application app = (Application) param.thisObject;
                         if (TermsGate.INSTANCE.isAccepted(app)) {
                             CrashReportRuntime.install(app, ModuleEntry.this.getClass().getClassLoader());
+                            HchatUpdateChecker.scheduleCheck(app, BuildConfig.VERSION_NAME);
                         }
                         installCustomBottomBarEarly(app, resolveHostClassLoader(app, lpparam));
                         new Thread(() -> initModule(app, lpparam), "Hchat-Init").start();
