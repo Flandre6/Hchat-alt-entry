@@ -54,6 +54,8 @@ import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutIconStore
 import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutItem
 import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutRuntime
 import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutSettings
+import h.Hchat.hooks.items.monetgenerator.MonetModuleGeneratorFeature
+import h.Hchat.hooks.items.monetgenerator.MonetModuleGeneratorSettings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -2652,7 +2654,8 @@ internal object HchatConfigBackup {
         GroupNicknameColorSettings.PREFS_NAME,
         SecureMessageSettings.SEND_PREFS,
         SecureMessageSettings.ANTI_PREFS,
-        UploadTransparentAvatarSettings.PREFS_NAME
+        UploadTransparentAvatarSettings.PREFS_NAME,
+        MonetModuleGeneratorSettings.PREFS_NAME
     ).distinct()
 
     fun exportToUri(context: Context, uri: Uri): Int {
@@ -3110,7 +3113,8 @@ internal fun practicalFeatureGroups(
                 CustomFriendAvatarFeature.ID,
                 UploadTransparentAvatarFeature.ID,
                 CustomBottomBarFeature.ID,
-                FloatingBottomBarSettings.FEATURE_ID
+                FloatingBottomBarSettings.FEATURE_ID,
+                MonetModuleGeneratorFeature.ID
             )
         ),
         FeatureGroupEntry(
@@ -3916,6 +3920,9 @@ internal fun featureSubSearchTerms(featureId: String): List<String> {
         SecureMessageSettings.ANTI_ID -> listOf("反安全消息", "安全标记", "sec_msg_node", "恢复长按菜单")
         ChatTimeStyleFeature.ID -> listOf("会话时间样式", "聊天时间", "微信时间", "自定义时间", "隐藏时间", "时间格式")
         UploadTransparentAvatarFeature.ID -> listOf("上传透明头像", "透明头像", "PNG头像", "透明背景", "Alpha通道")
+        MonetModuleGeneratorFeature.ID -> listOf(
+            "莫奈引擎", "Material You", "动态取色", "RRO", "Root模块", "Magisk", "KernelSU", "APatch", "气泡圆角", "底栏取色"
+        )
         HideChatAvatarFeature.ID -> listOf("隐藏头像", "隐藏自己头像", "隐藏对方头像", "聊天头像", "群聊头像", "私聊头像")
         CustomBottomBarFeature.ID -> listOf(
             "自定义底栏", "底部导航", "微信首页", "修改图标", "修改标题", "隐藏标题", "隐藏底栏"
