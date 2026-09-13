@@ -477,6 +477,7 @@ import h.Hchat.hooks.items.voicepreview.VoicePreviewSettings
 import h.Hchat.media.AudioTransformBridge
 import h.Hchat.preferences.HchatStorage
 import h.Hchat.preferences.TermsGate
+import h.Hchat.update.HchatUpdateChecker
 import h.Hchat.ui.FeatureSettingsProvider
 import h.Hchat.ui.UIRegistry
 import h.Hchat.utils.KavaReflector
@@ -2976,7 +2977,7 @@ private fun MainSettingsPage(
                             }
                         }
                         item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "关于") }
-                        item { AboutCard() }
+                        item { AboutCard(context) }
                         item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "配置") }
                         item {
                             ConfigBackupCard(
@@ -42903,15 +42904,79 @@ private fun StatsCard(sp: SharedPreferences) {
 }
 
 @Composable
-private fun AboutCard() {
+private fun AboutCard(context: Context) {
     val hostVersion = WeChatApis.version()?.current()?.displayVersion()?.takeIf { it.isNotBlank() } ?: "未知"
     val moduleVersion = BuildConfig.VERSION_NAME.takeIf { it.isNotBlank() } ?: "未知"
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<HchatUpdateChecker.CheckResult?>(null) }
+
+    fun checkForUpdate() {
+        if (checking) return
+        checking = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                HchatUpdateChecker.check(moduleVersion)
+            }
+            updateResult = result
+            checking = false
+            HchatUpdateChecker.notifyIfNew(context, result)
+        }
+    }
+
+    LaunchedEffect(moduleVersion) {
+        checkForUpdate()
+    }
+
+    val updateSummary = when {
+        checking -> "正在检查 GitHub Release…"
+        updateResult?.isNewer == true -> "发现 ${updateResult?.remoteVersion ?: "新版本"}，点击查看"
+        updateResult?.error != null -> "检查失败，点击重试"
+        updateResult != null -> "当前已是最新版本"
+        else -> "点击检查新版本"
+    }
     SettingsCard {
         InfoRow(label = "版本", value = moduleVersion)
         InsetDivider()
         InfoRow(label = "宿主", value = hostVersion)
         InsetDivider()
         InfoRow(label = "Hchat作者", value = "。。")
+        InsetDivider()
+        ActionRow(
+            title = "推送更新",
+            summary = updateSummary,
+            onClick = {
+                if (updateResult?.isNewer == true) {
+                    HchatUpdateChecker.openDownload(context, updateResult!!)
+                } else {
+                    checkForUpdate()
+                }
+            }
+        )
+        updateResult?.takeIf { it.isNewer }?.let { result ->
+            InsetDivider()
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    text = "更新说明",
+                    color = MiuixTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    modifier = Modifier.padding(top = 6.dp),
+                    text = result.notes.ifBlank { "本次版本暂无详细更新说明" },
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 13.sp
+                )
+            }
+            InsetDivider()
+            ActionRow(
+                title = "下载新版本",
+                summary = result.downloadUrl?.let { "打开 APK 下载" } ?: "打开 GitHub Release 页面",
+                onClick = { HchatUpdateChecker.openDownload(context, result) }
+            )
+        }
     }
 }
 

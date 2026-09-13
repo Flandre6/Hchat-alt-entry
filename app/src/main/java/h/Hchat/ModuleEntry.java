@@ -27,6 +27,7 @@ import h.Hchat.preferences.TermsGate;
 import h.Hchat.dexkit.DexBridgeHolder;
 import h.Hchat.event.EventBus;
 import h.Hchat.ui.UIRegistry;
+import h.Hchat.update.HchatUpdateChecker;
 import h.Hchat.utils.HLog;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -110,6 +111,8 @@ public class ModuleEntry implements IXposedHookLoadPackage {
                         Application app = (Application) param.thisObject;
                         if (TermsGate.INSTANCE.isAccepted(app)) {
                             CrashReportRuntime.install(app, ModuleEntry.this.getClass().getClassLoader());
+                            new Thread(() -> HchatUpdateChecker.INSTANCE.scheduleCheck(
+                                    app, BuildConfig.VERSION_NAME), "Hchat-UpdateSchedule").start();
                             // 悬浮入口不依赖 DexKit，先注册生命周期，避免错过首个 Activity。
                             try {
                                 FloatingShortcutRuntime.INSTANCE.install(app);
