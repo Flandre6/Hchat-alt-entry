@@ -45,6 +45,7 @@ import h.Hchat.hooks.items.messageforward.MessageForwardFeature
 import h.Hchat.hooks.items.miniprogrambaselib.FakeMiniProgramBaseLibFeature
 import h.Hchat.hooks.items.miniprogramsplashad.SkipGlobalMiniProgramSplashAdsFeature
 import h.Hchat.hooks.items.miniprogramvideoad.SkipMiniProgramVideoAdsFeature
+import h.Hchat.hooks.items.monetgenerator.MonetModuleGeneratorFeature
 import h.Hchat.hooks.items.musicorder.QQMusicOrderFeature
 import h.Hchat.hooks.items.moments.OriginalMomentsUploadFeature
 import h.Hchat.hooks.items.moments.MomentsAutoLikeFeature
@@ -107,6 +108,7 @@ object FeatureRegistry {
             .register(RoundAvatarFeature())
             .register(CustomFriendAvatarFeature())
             .register(UploadTransparentAvatarFeature())
+            .register(MonetModuleGeneratorFeature())
             .register(RealNameTailFeature())
             .register(MemberTitleFeature())
             .register(AutoRedPacketFeature())

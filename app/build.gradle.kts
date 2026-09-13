@@ -9,6 +9,20 @@ val modernXposed = providers.gradleProperty("hchat.modernXposed")
     .orElse(true)
     .get()
 
+val arsclibSource = configurations.create("arsclibSource") {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
+// ARSCLib ships desktop Android/XML Pull stubs; strip them before D8/R8.
+val prepareAndroidArsclib = tasks.register<Jar>("prepareAndroidArsclib") {
+    from(provider { arsclibSource.map { zipTree(it) } })
+    exclude("android/**", "org/xmlpull/v1/**")
+    archiveFileName.set("arsclib-android.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("generated/arsclib"))
+}
+
 val releaseStoreFile = rootProject.file("app/keystore/。。.jks")
 val releaseStorePassword = providers.environmentVariable("HCAT_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("HCAT_KEY_ALIAS").orNull
@@ -96,6 +110,7 @@ android {
             excludes += "kotlin/**"
             excludes += "kotlin-tooling-metadata.json"
             excludes += "frameworks/android/*.apk"
+            excludes += "org/bouncycastle/pqc/crypto/picnic/**"
             excludes += "android/attrs.xml"
             excludes += "android/attrs_manifest.xml"
             excludes += "android/res-map.txt"
@@ -128,7 +143,11 @@ dependencies {
     }
     implementation("io.github.billywei01:fastkv:3.0.1")
     implementation("org.luckypray:dexkit:2.0.1")
-    implementation("com.github.REAndroid:ARSCLib:V1.3.8")
+    add(arsclibSource.name, "io.github.reandroid:ARSCLib:1.4.0")
+    implementation(files(prepareAndroidArsclib))
+    implementation("com.android.tools.build:apksig:9.3.2")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.79")
     implementation("io.github.skylot:jadx-dex-input:1.5.5") {
         exclude(group = "com.google.guava", module = "guava")
     }

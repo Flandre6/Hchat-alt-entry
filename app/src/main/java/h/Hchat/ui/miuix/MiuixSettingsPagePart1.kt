@@ -54,6 +54,7 @@ import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutIconStore
 import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutItem
 import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutRuntime
 import h.Hchat.hooks.items.floatingshortcut.FloatingShortcutSettings
+import h.Hchat.hooks.items.monetgenerator.MonetModuleGeneratorFeature
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -736,6 +737,7 @@ internal fun FeatureSettingsPage(
         HideChatAvatarFeature.ID -> HideChatAvatarMiuixPage(context, provider, onBack)
         CustomBottomBarFeature.ID -> CustomBottomBarMiuixPage(context, provider, onBack)
         FloatingBottomBarSettings.FEATURE_ID -> FloatingBottomBarMiuixPage(context, provider, onBack)
+        MonetModuleGeneratorFeature.ID -> MonetModuleGeneratorMiuixPage(context, provider, onBack)
         RoundAvatarFeature.ID -> RoundAvatarMiuixPage(context, provider, onBack)
         CustomFriendAvatarFeature.ID -> CustomFriendAvatarMiuixPage(context, provider, onBack)
         MessageBlockFeature.ID -> MessageBlockMiuixPage(context, provider, onBack)
