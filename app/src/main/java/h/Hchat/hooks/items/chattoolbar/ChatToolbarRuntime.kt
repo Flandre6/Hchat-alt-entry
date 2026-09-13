@@ -188,7 +188,7 @@ class ChatToolbarRuntime(
                 tag = TOOLBAR_TAG
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
-                fillViewport = false
+                isFillViewport = false
                 addView(
                     row,
                     FrameLayout.LayoutParams(

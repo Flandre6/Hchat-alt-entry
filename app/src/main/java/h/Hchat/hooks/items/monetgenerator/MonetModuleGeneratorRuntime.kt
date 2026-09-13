@@ -56,7 +56,7 @@ object MonetModuleGeneratorRuntime {
         return if (suffix.isBlank()) "Hchat_Monet_WeChat.zip" else "Hchat_Monet_WeChat_$suffix.zip"
     }
 
-    fun generate(
+    internal fun generate(
         output: MonetModuleDocumentBridge.ExportTarget,
         options: MonetGenerationOptions,
         onEvent: (MonetGenerationEvent) -> Unit,
