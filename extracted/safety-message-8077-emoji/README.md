@@ -1,6 +1,6 @@
 # 表情安全消息代码提取
 
-本目录提取自 `safety-message-8077.zip`，只包含表情安全消息相关代码，尚未接入当前项目的 `FeatureRegistry`。
+本目录提取自 `safety-message-8077.zip`，用于保留表情安全消息原始迁移依据。正式运行实现已并入 `app/src/main/java/h/Hchat/hooks/items/securemessage/SendSecureMessageFeature.kt`，共用现有“安全消息”功能开关，无需单独注册功能。
 
 ## 文件
 
@@ -20,4 +20,4 @@
 
 调用方需要传入 `FeatureContext`、`MutableList<XC_MethodHook.Unhook>`、错误日志函数和节点写回函数；可直接传入 `EmojiSafetyMessageHooks::appendNode`。运行环境还需要项目现有的 `HchatStorage`、`KavaReflector`、Xposed API 和宿主反射辅助。
 
-这份提取结果没有进行 Gradle 编译或真机 Hook 验证；它用于后续移植和代码审阅。
+本目录中的提取副本不参与 APK 编译；正式运行实现仍需在对应微信版本上进行真机 Hook 验证。

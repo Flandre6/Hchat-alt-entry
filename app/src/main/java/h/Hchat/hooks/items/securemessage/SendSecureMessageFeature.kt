@@ -3,6 +3,7 @@ package h.Hchat.hooks.items.securemessage
 import de.robv.android.xposed.XC_MethodHook
 import h.Hchat.dexkit.DexMethodCache
 import h.Hchat.event.Events
+import h.Hchat.hooks.api.core.WeChatApis
 import h.Hchat.hooks.core.BaseFeature
 import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.core.FeatureContext
@@ -19,11 +20,16 @@ import java.lang.reflect.Modifier
 class SendSecureMessageFeature : BaseFeature() {
     @Volatile private var installed = false
     @Volatile private var mergeInstalled = false
+    @Volatile private var emojiSourceInstalled = false
+    @Volatile private var emojiDispatchInstalled = false
     private var prefs: android.content.SharedPreferences? = null
     private lateinit var methodPrefs: android.content.SharedPreferences
     @Volatile private var markerLogged = false
     @Volatile private var markerFailureLogged = false
     @Volatile private var hookMissLogged = false
+    @Volatile private var emojiSourceTriggeredLogged = false
+    @Volatile private var emojiDispatchTriggeredLogged = false
+    @Volatile private var unsupportedEmojiVersionLogged = false
 
     override fun featureId(): String = SecureMessageSettings.SEND_ID
     override fun name(): String = "安全消息"
@@ -46,7 +52,7 @@ class SendSecureMessageFeature : BaseFeature() {
 
     @Synchronized
     private fun installHook(context: FeatureContext): Boolean {
-        if (installed && mergeInstalled) return true
+        if (installed && mergeInstalled && emojiHooksReady(context)) return true
         val runtimeKey = methodCacheKey(context)
         if (runtimeKey.isBlank()) {
             logError("安全消息安装跳过：微信运行时版本信息未就绪", null)
@@ -86,7 +92,130 @@ class SendSecureMessageFeature : BaseFeature() {
             false
         }
         val mergeReady = if (mergeInstalled) true else installSourceMergeHooks(insert)
-        return insertReady && mergeReady
+        val emojiReady = installEmojiHooks(context)
+        return insertReady && mergeReady && emojiReady
+    }
+
+    /**
+     * 表情发送会在本地消息入库后重新生成 MsgSource，因此通用入库 Hook 不足以覆盖
+     * 最终网络请求。这里按已确认的 8.0.76/8.0.77 链路补写两次标记。
+     */
+    private fun installEmojiHooks(context: FeatureContext): Boolean {
+        val version = WeChatApis.version()?.current()
+        val profile = EmojiSecureMessageProfile.forVersion(version?.versionName, version?.versionCode ?: 0L)
+        if (profile == null) {
+            if (!unsupportedEmojiVersionLogged) {
+                unsupportedEmojiVersionLogged = true
+                logInfo(
+                    "表情安全消息专用链路未启用: 微信 ${version?.displayVersion() ?: "版本未知"} " +
+                        "不在已验证映射中"
+                )
+            }
+            return true
+        }
+        val hostVersion = version?.displayVersion() ?: "未知"
+        val sourceReady = emojiSourceInstalled || installEmojiSourceHook(context, profile, hostVersion)
+        val dispatchReady = emojiDispatchInstalled || installEmojiDispatchHook(context, profile, hostVersion)
+        return sourceReady && dispatchReady
+    }
+
+    private fun emojiHooksReady(context: FeatureContext): Boolean {
+        val version = WeChatApis.version()?.current()
+        val supported = EmojiSecureMessageProfile.forVersion(
+            version?.versionName,
+            version?.versionCode ?: 0L
+        ) != null
+        return !supported || (emojiSourceInstalled && emojiDispatchInstalled)
+    }
+
+    private fun installEmojiSourceHook(
+        context: FeatureContext,
+        profile: EmojiSecureMessageProfile,
+        hostVersion: String
+    ): Boolean = runCatching {
+        val loader = context.hostClassLoader()
+        val messageClass = requireNotNull(KavaReflector.loadClass(EMOJI_MESSAGE_CLASS, loader)) {
+            "未找到 $EMOJI_MESSAGE_CLASS"
+        }
+        val owner = requireNotNull(KavaReflector.loadClass(profile.sourceOwner, loader)) {
+            "未找到 ${profile.sourceOwner}"
+        }
+        val target = requireNotNull(KavaReflector.findMethodRecursive(owner, EMOJI_SOURCE_METHOD, messageClass)) {
+            "未找到 ${profile.sourceOwner}.$EMOJI_SOURCE_METHOD(${messageClass.name})"
+        }
+        check(target.returnType == String::class.java) { "表情 MsgSource 方法返回类型不匹配: $target" }
+        HookRegistry.get().hook(target, object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                if (!enabled() || param.hasThrowable()) return
+                val message = param.args?.getOrNull(0) ?: return
+                if (readNumber(message, "field_type", "type", "getType", "getMsgType")?.toInt() != EMOJI_TYPE) {
+                    return
+                }
+                param.result = SecureMessageSource.addMarker(param.result as? String)
+                if (!emojiSourceTriggeredLogged) {
+                    emojiSourceTriggeredLogged = true
+                    logInfo("表情 MsgSource 安全标记已写入")
+                }
+            }
+        })
+        emojiSourceInstalled = true
+        logInfo("表情 MsgSource Hook 已安装[$hostVersion]: ${target.toGenericString()}")
+        true
+    }.getOrElse {
+        logError("表情 MsgSource Hook 安装失败[$hostVersion]", it)
+        false
+    }
+
+    private fun installEmojiDispatchHook(
+        context: FeatureContext,
+        profile: EmojiSecureMessageProfile,
+        hostVersion: String
+    ): Boolean = runCatching {
+        val loader = context.hostClassLoader()
+        val scene = requireNotNull(KavaReflector.loadClass(profile.emojiScene, loader)) {
+            "未找到 ${profile.emojiScene}"
+        }
+        val network = requireNotNull(KavaReflector.loadClass(EMOJI_NETWORK_CLASS, loader)) {
+            "未找到 $EMOJI_NETWORK_CLASS"
+        }
+        val dispatcher = requireNotNull(KavaReflector.loadClass(EMOJI_DISPATCHER_CLASS, loader)) {
+            "未找到 $EMOJI_DISPATCHER_CLASS"
+        }
+        val target = requireNotNull(
+            KavaReflector.findMethodRecursive(scene, EMOJI_DISPATCH_METHOD, network, dispatcher)
+        ) {
+            "未找到 ${profile.emojiScene}.$EMOJI_DISPATCH_METHOD(${network.name},${dispatcher.name})"
+        }
+        check(target.returnType == Int::class.javaPrimitiveType) { "表情请求分发方法返回类型不匹配: $target" }
+        HookRegistry.get().hook(target, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                if (!enabled()) return
+                try {
+                    val request = KavaReflector.readField(param.thisObject, EMOJI_SCENE_REQUEST_FIELD) ?: return
+                    val wrapper = KavaReflector.readField(request, EMOJI_REQUEST_WRAPPER_FIELD) ?: return
+                    val list = KavaReflector.readField(wrapper, EMOJI_REQUEST_LIST_FIELD) ?: return
+                    val items = KavaReflector.readField(list, EMOJI_ITEMS_FIELD) as? java.util.List<*> ?: return
+                    val item = items.firstOrNull() ?: return
+                    val field = KavaReflector.findFieldRecursive(item.javaClass, EMOJI_SOURCE_FIELD)
+                    val source = KavaReflector.readField(field, item) as? String
+                    check(KavaReflector.writeField(field, item, SecureMessageSource.addMarker(source))) {
+                        "写入 sendemoji 请求 MsgSource 失败"
+                    }
+                    if (!emojiDispatchTriggeredLogged) {
+                        emojiDispatchTriggeredLogged = true
+                        logInfo("表情 sendemoji 请求安全标记已写入")
+                    }
+                } catch (error: Throwable) {
+                    logError("表情 sendemoji 请求安全标记注入失败[$hostVersion]", error)
+                }
+            }
+        })
+        emojiDispatchInstalled = true
+        logInfo("表情 sendemoji Hook 已安装[$hostVersion]: ${target.toGenericString()}")
+        true
+    }.getOrElse {
+        logError("表情 sendemoji Hook 安装失败[$hostVersion]", it)
+        false
     }
 
     /**
@@ -257,5 +386,16 @@ class SendSecureMessageFeature : BaseFeature() {
         val SOURCE_FIELDS = arrayOf("field_msgSource", "msgSource", "G", "g")
         const val VIDEO_COMPAT = 62
         const val MESSAGE_PACKAGE = "com.tencent.mm.storage."
+        const val EMOJI_TYPE = 47
+        const val EMOJI_MESSAGE_CLASS = "com.tencent.mm.storage.e9"
+        const val EMOJI_SOURCE_METHOD = "a"
+        const val EMOJI_DISPATCH_METHOD = "doScene"
+        const val EMOJI_NETWORK_CLASS = "com.tencent.mm.network.s"
+        const val EMOJI_DISPATCHER_CLASS = "com.tencent.mm.modelbase.u0"
+        const val EMOJI_SCENE_REQUEST_FIELD = "d"
+        const val EMOJI_REQUEST_WRAPPER_FIELD = "a"
+        const val EMOJI_REQUEST_LIST_FIELD = "a"
+        const val EMOJI_ITEMS_FIELD = "e"
+        const val EMOJI_SOURCE_FIELD = "p"
     }
 }
