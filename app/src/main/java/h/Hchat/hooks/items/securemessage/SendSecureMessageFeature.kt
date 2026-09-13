@@ -22,6 +22,7 @@ class SendSecureMessageFeature : BaseFeature() {
     @Volatile private var mergeInstalled = false
     @Volatile private var emojiSourceInstalled = false
     @Volatile private var emojiDispatchInstalled = false
+    @Volatile private var emojiCheckInstalled = false
     private var prefs: android.content.SharedPreferences? = null
     private lateinit var methodPrefs: android.content.SharedPreferences
     @Volatile private var markerLogged = false
@@ -29,6 +30,7 @@ class SendSecureMessageFeature : BaseFeature() {
     @Volatile private var hookMissLogged = false
     @Volatile private var emojiSourceTriggeredLogged = false
     @Volatile private var emojiDispatchTriggeredLogged = false
+    @Volatile private var emojiCheckTriggeredLogged = false
     @Volatile private var unsupportedEmojiVersionLogged = false
 
     override fun featureId(): String = SecureMessageSettings.SEND_ID
@@ -52,7 +54,7 @@ class SendSecureMessageFeature : BaseFeature() {
 
     @Synchronized
     private fun installHook(context: FeatureContext): Boolean {
-        if (installed && mergeInstalled && emojiHooksReady(context)) return true
+        if (installed && mergeInstalled && emojiHooksReady(context) && emojiCheckInstalled) return true
         val runtimeKey = methodCacheKey(context)
         if (runtimeKey.isBlank()) {
             logError("安全消息安装跳过：微信运行时版本信息未就绪", null)
@@ -93,7 +95,8 @@ class SendSecureMessageFeature : BaseFeature() {
         }
         val mergeReady = if (mergeInstalled) true else installSourceMergeHooks(insert)
         val emojiReady = installEmojiHooks(context)
-        return insertReady && mergeReady && emojiReady
+        val emojiCheckReady = if (emojiCheckInstalled) true else installEmojiSelfCheckHooks(context, runtimeKey)
+        return insertReady && mergeReady && emojiReady && emojiCheckReady
     }
 
     /**
@@ -127,6 +130,72 @@ class SendSecureMessageFeature : BaseFeature() {
         ) != null
         return !supported || (emojiSourceInstalled && emojiDispatchInstalled)
     }
+
+    /**
+     * 自发出的表情在本地回显/数据库更新后可能丢失 msgSource，但长按菜单仍会经过
+     * 微信的 sec_msg_node 检查。对 type=47 且 isSend=1 的消息做精确兜底，避免自己
+     * 可以转发表情、别人却不能转发的不一致行为；反安全消息开关不参与此判断。
+     */
+    private fun installEmojiSelfCheckHooks(context: FeatureContext, runtimeKey: String): Boolean {
+        val candidates = linkedSetOf<Method>()
+        DexMethodCache.load(
+            methodPrefs,
+            runtimeKey,
+            context.hostClassLoader(),
+            SecureMessageSettings.CACHE_EMOJI_CHECK
+        )?.takeIf(::isCheckMethod)?.let(candidates::add)
+        candidates += findMethods(context, SECURE_CHECK_ANCHOR).filter(::isCheckMethod)
+        if (candidates.isEmpty()) {
+            logError("自发表情安全检查兜底入口未定位到", null)
+            return true
+        }
+        if (candidates.size == 1) {
+            DexMethodCache.save(
+                methodPrefs,
+                runtimeKey,
+                SecureMessageSettings.CACHE_EMOJI_CHECK,
+                candidates.first()
+            )
+        } else {
+            DexMethodCache.clear(methodPrefs, runtimeKey, SecureMessageSettings.CACHE_EMOJI_CHECK)
+        }
+        var hooked = false
+        candidates.take(MAX_CHECK_HOOKS).forEach { method ->
+            runCatching {
+                HookRegistry.get().hook(method, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (!enabled()) return
+                        val message = param.args?.firstOrNull { it != null && isMessageLike(it) } ?: return
+                        if (!isOutgoingEmoji(message)) return
+                        if (SecureMessageSource.containsMarker(readMessageSource(message))) return
+                        param.result = true
+                        if (!emojiCheckTriggeredLogged) {
+                            emojiCheckTriggeredLogged = true
+                            logInfo("自发表情安全检查兜底已生效: ${method.name}")
+                        }
+                    }
+                })
+                hooked = true
+            }.onFailure {
+                logError("自发表情安全检查 Hook 安装失败: ${method.toGenericString()}", it)
+            }
+        }
+        emojiCheckInstalled = hooked
+        if (hooked) logInfo("自发表情安全检查兜底 Hook 已安装: ${candidates.size} 个入口")
+        return hooked
+    }
+
+    private fun isOutgoingEmoji(message: Any): Boolean {
+        val send = readNumber(message, "field_isSend", "isSend", "getIsSend", "getSend")?.toInt()
+        if (send != 1) return false
+        return readNumber(message, "field_type", "type", "getType", "getMsgType")?.toInt() == EMOJI_TYPE
+    }
+
+    private fun isCheckMethod(method: Method): Boolean =
+        Modifier.isStatic(method.modifiers) &&
+            method.returnType == Boolean::class.javaPrimitiveType &&
+            method.parameterCount == 1 &&
+            !method.parameterTypes[0].isPrimitive
 
     private fun installEmojiSourceHook(
         context: FeatureContext,
@@ -380,7 +449,9 @@ class SendSecureMessageFeature : BaseFeature() {
     }
 
     private companion object {
+        const val MAX_CHECK_HOOKS = 6
         const val INSERT_ANCHOR = "Error insert message msg:%s talker:%s"
+        const val SECURE_CHECK_ANCHOR = ".msgsource.sec_msg_node.sfn"
         val SOURCE_SETTERS = arrayOf("setMsgSource", "setMsgsource", "setSource")
         // 8.0.77 (e9) stores MsgInfo.msgSource in the obfuscated G field.
         val SOURCE_FIELDS = arrayOf("field_msgSource", "msgSource", "G", "g")
