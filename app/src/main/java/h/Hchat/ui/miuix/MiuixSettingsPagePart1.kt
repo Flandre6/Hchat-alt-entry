@@ -229,6 +229,7 @@ import h.Hchat.hooks.items.automessageforward.AutoMessageForwardSettings
 import h.Hchat.hooks.items.callmedialimit.CallMediaLimitFeature
 import h.Hchat.hooks.items.callmedialimit.CallMediaLimitSettings
 import h.Hchat.hooks.items.callmedialimit.CallRingtoneBlockFeature
+import h.Hchat.hooks.items.chattoolbar.ChatToolbarFeature
 import h.Hchat.hooks.items.chattime.ChatTimeStyleFeature
 import h.Hchat.hooks.items.chattime.ChatTimeStyleSettings
 import h.Hchat.hooks.items.conversationgroup.ConversationGroup
@@ -730,6 +731,7 @@ internal fun FeatureSettingsPage(
         MessageTextColorFeature.ID -> MessageTextColorMiuixPage(context, provider, onBack)
         HomeTextColorFeature.ID -> HomeTextColorMiuixPage(context, provider, onBack)
         ChatTimeStyleFeature.ID -> ChatTimeStyleMiuixPage(context, provider, onBack)
+        ChatToolbarFeature.ID -> ChatToolbarMiuixPage(context, provider, onBack)
         InputHintFeature.ID -> InputHintMiuixPage(context, provider, onBack)
         HideChatAvatarFeature.ID -> HideChatAvatarMiuixPage(context, provider, onBack)
         CustomBottomBarFeature.ID -> CustomBottomBarMiuixPage(context, provider, onBack)

@@ -229,6 +229,8 @@ import h.Hchat.hooks.items.automessageforward.AutoMessageForwardSettings
 import h.Hchat.hooks.items.callmedialimit.CallMediaLimitFeature
 import h.Hchat.hooks.items.callmedialimit.CallMediaLimitSettings
 import h.Hchat.hooks.items.callmedialimit.CallRingtoneBlockFeature
+import h.Hchat.hooks.items.chattoolbar.ChatToolbarFeature
+import h.Hchat.hooks.items.chattoolbar.ChatToolbarSettings
 import h.Hchat.hooks.items.chattime.ChatTimeStyleFeature
 import h.Hchat.hooks.items.chattime.ChatTimeStyleSettings
 import h.Hchat.hooks.items.conversationgroup.ConversationGroup
@@ -2609,6 +2611,7 @@ internal object HchatConfigBackup {
         ConversationGroupStore.PREFS_NAME,
         AutoReplySettings.PREFS_NAME,
         MessageAffixSettings.PREFS_NAME,
+        ChatToolbarSettings.PREFS_NAME,
         InputHintSettings.PREFS_NAME,
         AutoOriginalImageSettings.PREFS_NAME,
         AutoViewOriginalSettings.PREFS_NAME,
@@ -3809,6 +3812,9 @@ internal fun featureSubSearchTerms(featureId: String): List<String> {
         )
         MessageAffixFeature.ID -> listOf(
             "发送文本格式", "消息格式", "消息前后缀", "消息前缀", "消息后缀", "固定文字", "发送时间", "换行"
+        )
+        ChatToolbarFeature.ID -> listOf(
+            "聊天工具栏", "快捷工具栏", "相册", "拍摄", "系统拍摄", "视频通话", "语音通话", "位置", "红包", "转账", "文件", "快捷回复", "工具排序"
         )
         InputHintFeature.ID -> listOf(
             "输入框提示", "聊天输入框", "默认提示", "占位文字", "发送统计", "消息数量", "文字字数"
