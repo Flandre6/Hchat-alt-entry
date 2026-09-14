@@ -5528,13 +5528,13 @@ internal fun messageDetailsPositionValues(): Set<String> = setOf(
 
 internal fun messageDetailsPositionChoices(): List<PopupChoice<String>> = listOf(
     PopupChoice(label = "消息下方", value = HchatExtraSettings.POSITION_MESSAGE_BOTTOM),
-    PopupChoice(label = "消息气泡右方", value = HchatExtraSettings.POSITION_BUBBLE_RIGHT),
+    PopupChoice(label = "消息气泡旁边", value = HchatExtraSettings.POSITION_BUBBLE_RIGHT),
     PopupChoice(label = "头像上方", value = HchatExtraSettings.POSITION_AVATAR_ABOVE),
     PopupChoice(label = "头像下方", value = HchatExtraSettings.POSITION_AVATAR_BELOW)
 )
 
 internal fun messageDetailsPositionLabel(value: String): String = when (value) {
-    HchatExtraSettings.POSITION_BUBBLE_RIGHT -> "消息气泡右方"
+    HchatExtraSettings.POSITION_BUBBLE_RIGHT -> "对方消息在右侧，自己消息在左侧"
     HchatExtraSettings.POSITION_AVATAR_ABOVE -> "头像上方"
     HchatExtraSettings.POSITION_AVATAR_BELOW -> "头像下方"
     else -> "消息下方"
