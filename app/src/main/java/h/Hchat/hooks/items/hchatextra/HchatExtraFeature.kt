@@ -1684,7 +1684,9 @@ private class HchatExtraHooker(
         }
         val maxTop = (parent.height - parent.paddingBottom - label.measuredHeight)
             .coerceAtLeast(parent.paddingTop)
-        val top = (bubbleBounds.centerY() - label.measuredHeight / 2)
+        // Keep the details near the lower outside corner of the bubble, matching
+        // WeChat's read-state/time placement instead of floating at mid-height.
+        val top = (bubbleBounds.bottom - label.measuredHeight)
             .coerceIn(parent.paddingTop, maxTop)
         val params = label.layoutParams as? RelativeLayout.LayoutParams ?: return false
         params.width = label.measuredWidth
