@@ -5493,7 +5493,9 @@ internal fun MessageDetailsConfigPage(
                         InsetDivider()
                         NumberInputRow("右边距", "单位 dp，自己消息使用", rightMargin, onValueChange = { rightMargin = it })
                         InsetDivider()
-                    } else {
+                    } else if (position == HchatExtraSettings.POSITION_AVATAR_ABOVE ||
+                        position == HchatExtraSettings.POSITION_AVATAR_BELOW
+                    ) {
                         NumberInputRow("与头像间距", "单位 dp，可设置 0-64", avatarGap, onValueChange = { avatarGap = it })
                         InsetDivider()
                     }
@@ -5519,17 +5521,20 @@ internal fun cleanMessageDetailsColor(value: String, fallback: String): String {
 
 internal fun messageDetailsPositionValues(): Set<String> = setOf(
     HchatExtraSettings.POSITION_MESSAGE_BOTTOM,
+    HchatExtraSettings.POSITION_BUBBLE_RIGHT,
     HchatExtraSettings.POSITION_AVATAR_ABOVE,
     HchatExtraSettings.POSITION_AVATAR_BELOW
 )
 
 internal fun messageDetailsPositionChoices(): List<PopupChoice<String>> = listOf(
     PopupChoice(label = "消息下方", value = HchatExtraSettings.POSITION_MESSAGE_BOTTOM),
+    PopupChoice(label = "消息气泡右方", value = HchatExtraSettings.POSITION_BUBBLE_RIGHT),
     PopupChoice(label = "头像上方", value = HchatExtraSettings.POSITION_AVATAR_ABOVE),
     PopupChoice(label = "头像下方", value = HchatExtraSettings.POSITION_AVATAR_BELOW)
 )
 
 internal fun messageDetailsPositionLabel(value: String): String = when (value) {
+    HchatExtraSettings.POSITION_BUBBLE_RIGHT -> "消息气泡右方"
     HchatExtraSettings.POSITION_AVATAR_ABOVE -> "头像上方"
     HchatExtraSettings.POSITION_AVATAR_BELOW -> "头像下方"
     else -> "消息下方"

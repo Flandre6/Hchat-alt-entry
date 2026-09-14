@@ -35,6 +35,7 @@ object HchatExtraSettings {
     const val LEGACY_MESSAGE_DETAILS_FORMAT = "\${time} | \${type}"
     const val DEFAULT_MESSAGE_DETAILS_TIME_FORMAT = "HH:mm:ss"
     const val POSITION_MESSAGE_BOTTOM = "message_bottom"
+    const val POSITION_BUBBLE_RIGHT = "bubble_right"
     const val POSITION_AVATAR_ABOVE = "avatar_above"
     const val POSITION_AVATAR_BELOW = "avatar_below"
     const val DEFAULT_MESSAGE_DETAILS_POSITION = POSITION_MESSAGE_BOTTOM
