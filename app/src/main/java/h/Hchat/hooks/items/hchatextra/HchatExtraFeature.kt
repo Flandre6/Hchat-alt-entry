@@ -1675,10 +1675,12 @@ private class HchatExtraHooker(
         val maxLeft = (parent.width - parent.paddingRight - label.measuredWidth).coerceAtLeast(minLeft)
         val rightSide = bubbleBounds.right + gap
         val leftSide = bubbleBounds.left - gap - label.measuredWidth
-        val left = when {
-            rightSide <= maxLeft -> rightSide
-            isSelf && leftSide >= minLeft -> leftSide
-            else -> maxLeft
+        // Keep the label on the conversation-facing side of the bubble:
+        // incoming messages use the right edge, outgoing messages use the left edge.
+        val left = if (isSelf) {
+            leftSide.coerceIn(minLeft, maxLeft)
+        } else {
+            rightSide.coerceIn(minLeft, maxLeft)
         }
         val maxTop = (parent.height - parent.paddingBottom - label.measuredHeight)
             .coerceAtLeast(parent.paddingTop)
