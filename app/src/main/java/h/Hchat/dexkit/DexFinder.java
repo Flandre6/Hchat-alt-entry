@@ -33,7 +33,7 @@ import de.robv.android.xposed.XposedBridge;
 
 /**
  * DexFinder - 使用 DexKit 定位微信混淆后的类和方法
- * 适配微信 8.0.49 ~ 8.0.72+
+ * 适配微信 8.0.49 ~ 8.0.77+
  */
 public class DexFinder {
 
@@ -47,6 +47,7 @@ public class DexFinder {
     private final SharedPreferences cachePrefs;
     private final String runtimeCacheKey;
     private boolean resolvedAll;
+    private boolean databaseWrapperRescanned;
 
     // AddMsg 处理类
     public List<Class<?>> addMsgClasses = new ArrayList<>();
@@ -111,9 +112,6 @@ public class DexFinder {
     public Method sendFileMethod;
     public Method sendFileAttachDirMethod;
     public Method sendFileAttachPathMethod;
-    // 微信消息描述文本方法（签名 (Context, boolean)→String；微信对该类方法内部对 null 调 isEmpty() 会崩，用于防崩兜底）
-    // 跨版本通用：不依赖混淆类名/方法名，按签名定位（各版本这类方法极少，8.0.76 实测仅 3 个）
-    public List<Method> msgDescTextMethods = new java.util.ArrayList<>();
     // XML/AppMsg 原始发送入口
     public Method sendXmlAppMsgMethod;
     public Method appMsgParseMethod;
@@ -190,6 +188,7 @@ public class DexFinder {
     public Method coreStorageGetter;
     public Class<?> configStorageClass;
     public Class<?> sqliteDbWrapperClass;
+    public final List<Class<?>> sqliteDbWrapperCandidates = new ArrayList<>();
     public Method conversationDeleteMethod;
     public Method messageClearByTalkerMethod;
     public Method messageClearBatchMethod;
@@ -1236,34 +1235,6 @@ public class DexFinder {
         } catch (Throwable e) {
             h.Hchat.utils.HLog.e(TAG + " resolveSendXmlApi 失败: " + e.getMessage(), e);
         }
-    }
-
-    public void resolveMsgDescTextApi() {
-        try {
-            if (!msgDescTextMethods.isEmpty()) return;
-            // 跨版本通用：微信消息描述文本方法名稳定为 "l"（各版本 xN0.q/r.l），用 "string" 字符串缩小范围后按签名过滤
-            List<MethodData> methods = dexKit.findMethod(mkMethodUsingStringsAndName("l", "string"));
-            for (MethodData methodData : methods) {
-                try {
-                    Method method = methodData.getMethodInstance(classLoader);
-                    if (!isMsgDescTextMethod(method)) continue;
-                    KavaReflector.accessible(method);
-                    msgDescTextMethods.add(method);
-                } catch (Throwable ignored) {}
-            }
-            if (!msgDescTextMethods.isEmpty()) {
-                logDetail("消息描述文本兜底方法: " + msgDescTextMethods.size() + " 个");
-            }
-        } catch (Throwable e) {
-            h.Hchat.utils.HLog.e(TAG + " resolveMsgDescTextApi 失败: " + e.getMessage(), e);
-        }
-    }
-
-    private boolean isMsgDescTextMethod(Method method) {
-        if (method == null) return false;
-        if (method.getReturnType() != String.class) return false;
-        Class<?>[] params = method.getParameterTypes();
-        return params.length == 2 && params[0] == android.content.Context.class && params[1] == boolean.class;
     }
 
     private void resolveAppMsgParseMethod(Class<?> appMsgClass) {
@@ -2456,7 +2427,8 @@ public class DexFinder {
     // ============ 数据库/联系人公共 API ============
     public void resolveDatabaseApi() {
         try {
-            if (coreStorageGetter != null && sqliteDbWrapperClass != null && configStorageClass != null) return;
+            if (coreStorageGetter != null && sqliteDbWrapperClass != null && configStorageClass != null &&
+                    databaseWrapperRescanned) return;
 
             mmKernelClass = findFirstClassByStrings(
                     "MicroMsg.MMKernel",
@@ -2486,9 +2458,10 @@ public class DexFinder {
                     "MicroMsg.ConfigStorage",
                     "shouldProcessEvent db is close :%s");
 
-            sqliteDbWrapperClass = findFirstClassByStrings(
-                    "MicroMsg.SqliteDB",
-                    "sql is null ");
+            // 8.0.77 moved/duplicated the wrapper strings. Prefer a candidate
+            // whose declared methods actually expose mutation-shaped APIs.
+            sqliteDbWrapperClass = findDatabaseWrapperClass();
+            databaseWrapperRescanned = true;
 
             logDetail("数据库API: kernel="
                     + (mmKernelClass != null ? mmKernelClass.getName() : "null")
@@ -2499,6 +2472,61 @@ public class DexFinder {
         } catch (Throwable e) {
             h.Hchat.utils.HLog.e(TAG + " resolveDatabaseApi 失败: " + e.getMessage(), e);
         }
+    }
+
+    private Class<?> findDatabaseWrapperClass() {
+        sqliteDbWrapperCandidates.clear();
+        List<ClassData> candidates = new ArrayList<>();
+        String[][] anchors = new String[][]{
+                {"MicroMsg.SqliteDB", "sql is null "},
+                {"MicroMsg.SqliteDB"},
+                {"WCDB", "sql is null "}
+        };
+        for (String[] anchor : anchors) {
+            try {
+                for (ClassData data : dexKit.findClass(mkClassUsingStrings(anchor))) {
+                    if (!candidates.contains(data)) candidates.add(data);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        Class<?> best = null;
+        int bestScore = -1;
+        for (ClassData data : candidates) {
+            try {
+                Class<?> candidate = KavaReflector.loadClass(data.getName(), classLoader);
+                if (candidate == null) continue;
+                if (!sqliteDbWrapperCandidates.contains(candidate)) sqliteDbWrapperCandidates.add(candidate);
+                int inserts = 0;
+                int mutations = 0;
+                int score = 0;
+                Class<?> current = candidate;
+                while (current != null && current != Object.class) {
+                for (Method method : KavaReflector.declaredMethods(current)) {
+                    Class<?>[] params = method.getParameterTypes();
+                    boolean values = false;
+                    for (Class<?> param : params) {
+                        if (android.content.ContentValues.class.isAssignableFrom(param)) {
+                            values = true;
+                            break;
+                        }
+                    }
+                    if (!values) continue;
+                    if (method.getReturnType() == long.class) inserts++;
+                    if (method.getReturnType() == long.class || method.getReturnType() == int.class) mutations++;
+                    if (method.getReturnType() != void.class) score++;
+                }
+                    current = current.getSuperclass();
+                }
+                score += inserts * 4 + mutations;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return best;
     }
 
     public void resolveConversationDeleteApi() {
@@ -3499,6 +3527,8 @@ public class DexFinder {
             coreStorageClass = loadClass("coreStorageClass");
             configStorageClass = loadClass("configStorageClass");
             sqliteDbWrapperClass = loadClass("sqliteDbWrapperClass");
+            sqliteDbWrapperCandidates.clear();
+            if (sqliteDbWrapperClass != null) sqliteDbWrapperCandidates.add(sqliteDbWrapperClass);
             conversationDeleteMethod = loadMethod("conversationDeleteMethod");
             messageClearByTalkerMethod = loadMethod("messageClearByTalkerMethod");
             messageClearBatchMethod = loadMethod("messageClearBatchMethod");

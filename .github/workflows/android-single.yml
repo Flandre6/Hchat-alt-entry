@@ -3,18 +3,14 @@ name: 安卓单频道构建
 on:
   workflow_dispatch:
 
-# 同一频道的发布必须串行执行，避免两个运行同时计算出相同的版本标签。
-concurrency:
-  group: hchat-single-${{ github.ref_name }}
-  cancel-in-progress: false
-
 permissions:
   contents: write
 
 env:
   HCAT_SINGLE_VERSION_NAME_BASE: "5.5.6"
   HCAT_SINGLE_VERSION_CODE_BASE: "490"
-  HCAT_SINGLE_RUN_NUMBER_BASE: "0"    # Change from "100" to "0"
+  # Fork repositories restart GITHUB_RUN_NUMBER at 1.
+  HCAT_SINGLE_RUN_NUMBER_BASE: "0"
 
 jobs:
   build:
@@ -51,10 +47,6 @@ jobs:
           set -e
 
           current_branch="${GITHUB_REF_NAME}"
-          modern_xposed="false"
-          if [ "$current_branch" = "alt-entry-feature" ]; then
-            modern_xposed="true"
-          fi
           if [ "$current_branch" = "alt-entry" ]; then
             apk_name="Hchat-alt-entry-release-signed.apk"
           else
@@ -116,7 +108,6 @@ jobs:
           echo "HCAT_RELEASE_TAG=v${version_name}" >> "$GITHUB_ENV"
           echo "HCAT_RELEASE_TITLE=${version_name}" >> "$GITHUB_ENV"
           echo "HCAT_APK_NAME=${apk_name}" >> "$GITHUB_ENV"
-          echo "HCAT_MODERN_XPOSED=${modern_xposed}" >> "$GITHUB_ENV"
 
           git fetch --force --tags origin 'refs/tags/v*:refs/tags/v*' >/dev/null 2>&1 || true
           previous_change_tag="$(
@@ -162,7 +153,7 @@ jobs:
           HCAT_STORE_PASSWORD: ${{ secrets.HCAT_STORE_PASSWORD }}
           HCAT_KEY_ALIAS: ${{ secrets.HCAT_KEY_ALIAS }}
           HCAT_KEY_PASSWORD: ${{ secrets.HCAT_KEY_PASSWORD }}
-        run: sh ./gradlew --project-prop "hchat.modernXposed=${HCAT_MODERN_XPOSED}" :app:assembleRelease --build-cache --parallel --no-watch-fs -x lintVitalAnalyzeRelease
+        run: sh ./gradlew --project-prop hchat.modernXposed=true :app:assembleRelease --build-cache --parallel --no-watch-fs -x lintVitalAnalyzeRelease
 
       - name: 上传 APK 产物
         uses: actions/upload-artifact@v4

@@ -179,20 +179,36 @@ private class CallRingtoneBlockHooker(
             logger("定位微信群通话铃声路由失败", it)
             emptyList()
         }
-        val methods = routeData.mapNotNull { data ->
+        var methods = routeData.mapNotNull { data ->
             val route = runCatching {
                 data.getMethodInstance(context.hostClassLoader())
             }.getOrNull()?.takeIf(::isMultiTalkRouteMethod) ?: return@mapNotNull null
             runCatching { data.invokes }.getOrDefault(emptyList())
-                .mapNotNull { invoke ->
+                .flatMap { invoke ->
                     runCatching { invoke.getMethodInstance(context.hostClassLoader()) }.getOrNull()
+                ?.let { listOf(it) } ?: emptyList()
                 }
                 .filter { method ->
                     method.declaringClass == route.declaringClass && isMultiTalkDirectionMethod(method)
                 }
                 .distinctBy { it.toGenericString() }
-                .singleOrNull()
-        }.distinctBy { it.toGenericString() }
+        }.flatten().distinctBy { it.toGenericString() }
+
+        // Some 8.0.77 builds omit invoke metadata for this tiny dispatcher.
+        // The route class still exposes the same one-boolean void methods.
+        if (methods.isEmpty()) {
+            val fallbackMethods = routeData.mapNotNull { data ->
+                runCatching { data.getMethodInstance(context.hostClassLoader()) }.getOrNull()
+            }.filter(::isMultiTalkRouteMethod).flatMap { route ->
+                KavaReflector.declaredMethods(route.declaringClass)
+                    .filter(::isMultiTalkDirectionMethod)
+            }.distinctBy { it.toGenericString() }
+            if (fallbackMethods.size <= 4) {
+                methods = fallbackMethods
+            } else {
+                logger("微信群通话路由候选过多，跳过不确定 Hook: ${fallbackMethods.size}", null)
+            }
+        }
 
         if (methods.isEmpty()) {
             DexMethodCache.clear(methodCache, runtimeKey, CACHE_MULTI_TALK_DIRECTION_METHODS)

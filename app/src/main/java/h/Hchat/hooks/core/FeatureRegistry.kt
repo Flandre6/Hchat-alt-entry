@@ -8,8 +8,10 @@ import h.Hchat.hooks.items.automessageforward.AutoMessageForwardFeature
 import h.Hchat.hooks.items.autoreply.AutoReplyFeature
 import h.Hchat.hooks.items.autooriginal.AutoOriginalImageFeature
 import h.Hchat.hooks.items.autovieworiginal.AutoViewOriginalFeature
+import h.Hchat.hooks.items.backgroundbeauty.BackgroundBeautyFeature
 import h.Hchat.hooks.items.callmedialimit.CallMediaLimitFeature
 import h.Hchat.hooks.items.callmedialimit.CallRingtoneBlockFeature
+import h.Hchat.hooks.items.chattoolbar.ChatToolbarFeature
 import h.Hchat.hooks.items.chattime.ChatTimeStyleFeature
 import h.Hchat.hooks.items.conversationgroup.ConversationGroupFeature
 import h.Hchat.hooks.items.custombottombar.CustomBottomBarFeature
@@ -44,6 +46,7 @@ import h.Hchat.hooks.items.messageforward.MessageForwardFeature
 import h.Hchat.hooks.items.miniprogrambaselib.FakeMiniProgramBaseLibFeature
 import h.Hchat.hooks.items.miniprogramsplashad.SkipGlobalMiniProgramSplashAdsFeature
 import h.Hchat.hooks.items.miniprogramvideoad.SkipMiniProgramVideoAdsFeature
+import h.Hchat.hooks.items.monetgenerator.MonetModuleGeneratorFeature
 import h.Hchat.hooks.items.musicorder.QQMusicOrderFeature
 import h.Hchat.hooks.items.moments.OriginalMomentsUploadFeature
 import h.Hchat.hooks.items.moments.MomentsAutoLikeFeature
@@ -72,11 +75,11 @@ import h.Hchat.hooks.items.quickread.QuickMarkReadFeature
 import h.Hchat.hooks.items.quickterminate.QuickTerminateFeature
 import h.Hchat.hooks.items.realtail.RealNameTailFeature
 import h.Hchat.hooks.items.roundavatar.RoundAvatarFeature
+import h.Hchat.hooks.items.securemessage.AntiSecureMessageFeature
+import h.Hchat.hooks.items.securemessage.SendSecureMessageFeature
 import h.Hchat.hooks.items.script.ScriptPluginFeature
 import h.Hchat.hooks.items.scheduledtask.ScheduledTaskFeature
 import h.Hchat.hooks.items.selectedmessages.SelectedMessagesFeature
-import h.Hchat.hooks.items.securemessage.SendSecureMessageFeature
-import h.Hchat.hooks.items.securemessage.AntiSecureMessageFeature
 import h.Hchat.hooks.items.settings.SettingsFeature
 import h.Hchat.hooks.items.shortvideo.FinderMediaDownloadFeature
 import h.Hchat.hooks.items.statuslimit.StatusTextLimitFeature
@@ -84,6 +87,7 @@ import h.Hchat.hooks.items.swipequote.SwipeQuoteFeature
 import h.Hchat.hooks.items.tablet.WeChatTabletFeature
 import h.Hchat.hooks.items.textspeech.TextSpeechFeature
 import h.Hchat.hooks.items.textvoice.TextVoiceFeature
+import h.Hchat.hooks.items.transparentavatar.UploadTransparentAvatarFeature
 import h.Hchat.hooks.items.typingreport.TypingReportBlockFeature
 import h.Hchat.hooks.items.voiceforward.VoiceForwardFeature
 import h.Hchat.hooks.items.hchatextra.HchatExtraFeature
@@ -99,10 +103,13 @@ object FeatureRegistry {
         return FeatureManager()
             .register(SettingsFeature())
             .register(WechatApiFeature())
+            .register(ChatToolbarFeature())
             .register(FloatingShortcutFeature())
             .register(CustomBottomBarFeature())
             .register(RoundAvatarFeature())
             .register(CustomFriendAvatarFeature())
+            .register(UploadTransparentAvatarFeature())
+            .register(MonetModuleGeneratorFeature())
             .register(RealNameTailFeature())
             .register(MemberTitleFeature())
             .register(AutoRedPacketFeature())
@@ -144,6 +151,7 @@ object FeatureRegistry {
             .register(ChatTimeStyleFeature())
             .register(InputHintFeature())
             .register(MessageBubbleFeature())
+            .register(BackgroundBeautyFeature())
             .register(MessageTextColorFeature())
             .register(HomeTextColorFeature())
             .register(HomeSidePanelFeature())

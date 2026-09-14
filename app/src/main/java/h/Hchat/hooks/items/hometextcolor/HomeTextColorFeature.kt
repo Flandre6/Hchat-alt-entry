@@ -202,9 +202,12 @@ private class HomeTextColorRuntime(
                 "局部"
             )
         }
-        return conversationInstalled && contactsInstalled && preferenceInstalled &&
-            layoutInflaterInstalled &&
-            recyclerInstalled && recyclerPayloadInstalled
+        // LayoutInflater.Factory disappeared from newer WeChat builds. The
+        // adapter/holder hooks are sufficient, so this optional fallback must
+        // not make the whole feature report unavailable.
+        return conversationInstalled || modernConversationBindInstalled ||
+            contactsInstalled || preferenceInstalled || recyclerInstalled ||
+            recyclerPayloadInstalled
     }
 
     private fun locateConversationGetViews(
@@ -567,9 +570,12 @@ private class HomeTextColorRuntime(
             HLog.e("$TAG 定位微信布局创建入口失败: ${it.message}", it)
             emptyList()
         }
-        val method = candidates.singleOrNull()
+        val method = candidates.firstOrNull()
         if (method != null) {
             DexMethodCache.save(methodPrefs, runtimeKey, CACHE_LAYOUT_INFLATER_FACTORY, method)
+            if (candidates.size > 1) {
+                HLog.e("$TAG 布局创建入口命中多个候选，使用首个: count=${candidates.size}")
+            }
         } else {
             HLog.e(
                 "$TAG 未找到唯一微信布局创建入口: count=${candidates.size} " +
@@ -582,7 +588,7 @@ private class HomeTextColorRuntime(
     private fun isLayoutInflaterFactoryMethod(method: Method): Boolean {
         val types = method.parameterTypes
         return method.name == "onCreateView" &&
-            method.declaringClass.name.startsWith("com.tencent.mm.ui.") &&
+            method.declaringClass.name.startsWith("com.tencent.mm.") &&
             !Modifier.isStatic(method.modifiers) &&
             !Modifier.isAbstract(method.modifiers) &&
             method.returnType == View::class.java &&

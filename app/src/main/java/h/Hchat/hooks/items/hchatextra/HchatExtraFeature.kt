@@ -271,6 +271,7 @@ private class HchatExtraHooker(
             HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION,
             HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
         )) {
+            HchatExtraSettings.POSITION_BUBBLE_RIGHT -> HchatExtraSettings.POSITION_BUBBLE_RIGHT
             HchatExtraSettings.POSITION_AVATAR_ABOVE -> HchatExtraSettings.POSITION_AVATAR_ABOVE
             HchatExtraSettings.POSITION_AVATAR_BELOW -> HchatExtraSettings.POSITION_AVATAR_BELOW
             else -> HchatExtraSettings.POSITION_MESSAGE_BOTTOM
@@ -565,12 +566,6 @@ private class HchatExtraHooker(
         return runCatching {
             HookRegistry.get().hook(bind, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    // 功能关闭时不做任何 View 树/反射扫描。消息列表绑定非常高频，
-                    // 这里的无条件 capture 会直接增加群聊滚动时的主线程开销。
-                    if (!messageDetailsConfig.enabled) {
-                        messageDetailsBindStates.remove()
-                        return
-                    }
                     val state = runCatching { captureMessageDetailsBindState(param.args) }
                         .getOrElse {
                             logger("消息显示时间绑定前状态读取失败", it)
@@ -1116,7 +1111,9 @@ private class HchatExtraHooker(
         val configuredAvatarHidden = configuredAvatarHidden(details.isSelf)
         val hiddenAvatarBelowUsesBottom =
             configuredAvatarHidden && position == HchatExtraSettings.POSITION_AVATAR_BELOW
-        val resolvedAvatarAnchor = if (hiddenAvatarBelowUsesBottom) {
+        val usesAvatarAnchor = position == HchatExtraSettings.POSITION_AVATAR_ABOVE ||
+            position == HchatExtraSettings.POSITION_AVATAR_BELOW
+        val resolvedAvatarAnchor = if (hiddenAvatarBelowUsesBottom || !usesAvatarAnchor) {
             null
         } else {
             findAvatarDetailsAnchor(root, holder, configuredAvatarHidden)
@@ -1171,17 +1168,28 @@ private class HchatExtraHooker(
                 label.isClickable = false
             }
         }
-        val inserted = if (avatarAnchor != null) {
-            addAvatarDetailsView(root, avatarAnchor, avatarContent, label, position, details.isSelf)
-        } else {
-            addBottomDetailsView(
-                parent,
-                bottomAnchor?.layoutView ?: return false,
-                bottomAnchor.alignmentView,
-                label,
-                details,
-                configuredAvatarHidden || resolvedAvatarAnchor?.hidden == true
-            )
+        val inserted = when {
+            avatarAnchor != null -> {
+                addAvatarDetailsView(root, avatarAnchor, avatarContent, label, position, details.isSelf)
+            }
+            position == HchatExtraSettings.POSITION_BUBBLE_RIGHT -> {
+                addBubbleRightDetailsView(
+                    parent,
+                    bottomAnchor?.alignmentView ?: return false,
+                    label,
+                    details
+                )
+            }
+            else -> {
+                addBottomDetailsView(
+                    parent,
+                    bottomAnchor?.layoutView ?: return false,
+                    bottomAnchor.alignmentView,
+                    label,
+                    details,
+                    configuredAvatarHidden || resolvedAvatarAnchor?.hidden == true
+                )
+            }
         }
         if (inserted) {
             rememberMessageDetailsBinding(label, root, nativeTimeLabel, holder, nativeMessage, details)
@@ -1590,6 +1598,100 @@ private class HchatExtraHooker(
         val parentWidth = parent.width.takeIf { it > 0 } ?: parent.measuredWidth.takeIf { it > 0 }
             ?: return null
         return Rect(0, 0, parentWidth, parent.height.coerceAtLeast(1))
+    }
+
+    private fun addBubbleRightDetailsView(
+        parent: ViewGroup,
+        bubble: View,
+        label: TextView,
+        details: MessageDetails
+    ): Boolean {
+        if (parent !is RelativeLayout) return false
+        val oldParent = label.parent as? ViewGroup
+        val alreadyAttached = oldParent === parent
+        if (oldParent != null && !alreadyAttached) oldParent.removeView(label)
+        configureAvatarDetailsLabel(label)
+        if (label.gravity != Gravity.START) label.gravity = Gravity.START
+        if (label.textAlignment != View.TEXT_ALIGNMENT_TEXT_START) {
+            label.textAlignment = View.TEXT_ALIGNMENT_TEXT_START
+        }
+        if (label.translationX != 0f) label.translationX = 0f
+        if (label.translationY != 0f) label.translationY = 0f
+        label.visibility = View.INVISIBLE
+        val params = (label.layoutParams as? RelativeLayout.LayoutParams)
+            ?: RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            )
+        params.rules.fill(0)
+        if (!alreadyAttached) {
+            parent.addView(label, params)
+        } else {
+            label.layoutParams = params
+        }
+        if (!scheduleBubbleRightPosition(label, parent, bubble, details.isSelf, 0)) {
+            if (!alreadyAttached) parent.removeView(label)
+            return false
+        }
+        refreshMessageDetailsColorsAfterAttach(label, newlyAttached = !alreadyAttached)
+        return true
+    }
+
+    private fun scheduleBubbleRightPosition(
+        label: TextView,
+        parent: RelativeLayout,
+        bubble: View,
+        isSelf: Boolean,
+        attempt: Int
+    ): Boolean {
+        return schedulePreDraw(label, parent, messageDetailsPositionListeners) {
+            if (positionBubbleRightLabel(label, parent, bubble, isSelf)) {
+                label.visibility = View.VISIBLE
+            } else if (attempt < MESSAGE_DETAILS_POSITION_MAX_RETRY) {
+                scheduleBubbleRightPosition(label, parent, bubble, isSelf, attempt + 1)
+            } else {
+                label.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun positionBubbleRightLabel(
+        label: TextView,
+        parent: RelativeLayout,
+        bubble: View,
+        isSelf: Boolean
+    ): Boolean {
+        if (label.parent !== parent || bubble.width <= 0 || bubble.height <= 0 ||
+            parent.width <= 0 || !isViewWithinRoot(bubble, parent)
+        ) {
+            return false
+        }
+        measureAvatarDetailsLabel(label)
+        if (label.measuredWidth <= 0 || label.measuredHeight <= 0) return false
+        val bubbleBounds = Rect(0, 0, bubble.width, bubble.height)
+        parent.offsetDescendantRectToMyCoords(bubble, bubbleBounds)
+        val gap = dp(label.context, MESSAGE_DETAILS_BUBBLE_GAP_DP)
+        val minLeft = parent.paddingLeft
+        val maxLeft = (parent.width - parent.paddingRight - label.measuredWidth).coerceAtLeast(minLeft)
+        val rightSide = bubbleBounds.right + gap
+        val leftSide = bubbleBounds.left - gap - label.measuredWidth
+        val left = when {
+            rightSide <= maxLeft -> rightSide
+            isSelf && leftSide >= minLeft -> leftSide
+            else -> maxLeft
+        }
+        val maxTop = (parent.height - parent.paddingBottom - label.measuredHeight)
+            .coerceAtLeast(parent.paddingTop)
+        val top = (bubbleBounds.centerY() - label.measuredHeight / 2)
+            .coerceIn(parent.paddingTop, maxTop)
+        val params = label.layoutParams as? RelativeLayout.LayoutParams ?: return false
+        params.width = label.measuredWidth
+        params.height = label.measuredHeight
+        params.leftMargin = left - parent.paddingLeft
+        params.marginStart = params.leftMargin
+        params.topMargin = top - parent.paddingTop
+        label.layoutParams = params
+        return true
     }
 
     private fun addBottomDetailsView(
@@ -3517,6 +3619,7 @@ private class HchatExtraHooker(
         private const val PREF_PROFILE_ID = "hchat_profile_id"
         private const val MESSAGE_DETAILS_MAX_RETRY = 2
         private const val MESSAGE_DETAILS_POSITION_MAX_RETRY = 4
+        private const val MESSAGE_DETAILS_BUBBLE_GAP_DP = 4f
         private val MESSAGE_DETAILS_COLOR_KEYS = setOf(
             HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_BG,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_TEXT,
