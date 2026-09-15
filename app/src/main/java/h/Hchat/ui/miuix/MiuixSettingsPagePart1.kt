@@ -5200,6 +5200,13 @@ internal fun HchatExtraToggleMiuixPage(
     }
 }
 
+private data class MessageDetailsDistanceDraft(
+    val top: String = "0",
+    val bottom: String = "0",
+    val left: String = "0",
+    val right: String = "0"
+)
+
 @Composable
 internal fun MessageDetailsConfigPage(
     context: Context,
@@ -5278,19 +5285,20 @@ internal fun MessageDetailsConfigPage(
             ).toString()
         )
     }
-    var bubbleTop by remember {
-        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP).toString())
+    var distanceDrafts by remember {
+        mutableStateOf(
+            messageDetailsPositionValues().associateWith { distancePosition ->
+                MessageDetailsDistanceDraft(
+                    top = sp.getInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_TOP), 0).toString(),
+                    bottom = sp.getInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_BOTTOM), 0).toString(),
+                    left = sp.getInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_LEFT), 0).toString(),
+                    right = sp.getInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_RIGHT), 0).toString()
+                )
+            }
+        )
     }
-    var bubbleBottom by remember {
-        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM).toString())
-    }
-    var bubbleLeft by remember {
-        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT).toString())
-    }
-    var bubbleRight by remember {
-        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT).toString())
-    }
-    var showBubbleSpacingDialog by remember { mutableStateOf(false) }
+    var selectedDistancePosition by remember { mutableStateOf(position) }
+    var showDistancePage by remember { mutableStateOf(false) }
     var leftMargin by remember {
         mutableStateOf(
             sp.getInt(
@@ -5342,10 +5350,7 @@ internal fun MessageDetailsConfigPage(
         timeFormat = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TIME_FORMAT
         position = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
         avatarGap = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP.toString()
-        bubbleTop = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP.toString()
-        bubbleBottom = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM.toString()
-        bubbleLeft = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT.toString()
-        bubbleRight = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT.toString()
+        distanceDrafts = messageDetailsPositionValues().associateWith { MessageDetailsDistanceDraft() }
         leftMargin = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN.toString()
         rightMargin = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_RIGHT_MARGIN.toString()
         textSize = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TEXT_SIZE.toString()
@@ -5362,7 +5367,7 @@ internal fun MessageDetailsConfigPage(
             ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
         val savedAvatarGap = (avatarGap.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP)
             .coerceIn(0, 64)
-        sp.edit()
+        val editor = sp.edit()
             .putBoolean(HchatExtraSettings.KEY_MESSAGE_DETAILS, enabled)
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_BG, savedLightBg)
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_TEXT, savedLightText)
@@ -5372,10 +5377,6 @@ internal fun MessageDetailsConfigPage(
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_TIME_FORMAT, timeFormat.ifBlank { HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TIME_FORMAT })
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION, savedPosition)
             .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP, savedAvatarGap)
-            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP, bubbleTop.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP)
-            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM, bubbleBottom.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM)
-            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT, bubbleLeft.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT)
-            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT, bubbleRight.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT)
             .putInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
                 leftMargin.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN
@@ -5390,18 +5391,40 @@ internal fun MessageDetailsConfigPage(
             )
             .putBoolean(HchatExtraSettings.KEY_MESSAGE_DETAILS_CLICK_SHOW, clickShow)
             .putBoolean(HchatExtraSettings.KEY_MESSAGE_DETAILS_FORMAT_CONTENT, formatContent)
-            .apply()
+        val normalizedDistances = distanceDrafts.mapValues { (_, draft) ->
+            MessageDetailsDistanceDraft(
+                top = (draft.top.toIntOrNull() ?: 0).coerceIn(0, 64).toString(),
+                bottom = (draft.bottom.toIntOrNull() ?: 0).coerceIn(0, 64).toString(),
+                left = (draft.left.toIntOrNull() ?: 0).coerceIn(0, 64).toString(),
+                right = (draft.right.toIntOrNull() ?: 0).coerceIn(0, 64).toString()
+            )
+        }
+        normalizedDistances.forEach { (distancePosition, draft) ->
+            editor.putInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_TOP), draft.top.toInt())
+            editor.putInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_BOTTOM), draft.bottom.toInt())
+            editor.putInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_LEFT), draft.left.toInt())
+            editor.putInt(HchatExtraSettings.messageDetailsDistanceKey(distancePosition, HchatExtraSettings.DISTANCE_RIGHT), draft.right.toInt())
+        }
+        editor.apply()
         lightBg = savedLightBg
         lightText = savedLightText
         darkBg = savedDarkBg
         darkText = savedDarkText
         position = savedPosition
         avatarGap = savedAvatarGap.toString()
-        bubbleTop = bubbleTop.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
-        bubbleBottom = bubbleBottom.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
-        bubbleLeft = bubbleLeft.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
-        bubbleRight = bubbleRight.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
+        distanceDrafts = normalizedDistances
         Toast.makeText(context, "设置已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    if (showDistancePage) {
+        MessageDetailsDistancePage(
+            selectedPosition = selectedDistancePosition,
+            drafts = distanceDrafts,
+            onPositionChanged = { selectedDistancePosition = it },
+            onDraftsChanged = { distanceDrafts = it },
+            onBack = { showDistancePage = false }
+        )
+        return
     }
 
     val listState = rememberLazyListState()
@@ -5513,21 +5536,13 @@ internal fun MessageDetailsConfigPage(
                         onValueChanged = { position = it }
                     )
                     InsetDivider()
-                    if (position == HchatExtraSettings.POSITION_MESSAGE_BOTTOM) {
-                        NumberInputRow("左边距", "单位 dp，对方消息使用", leftMargin, onValueChange = { leftMargin = it })
-                        InsetDivider()
-                        NumberInputRow("右边距", "单位 dp，自己消息使用", rightMargin, onValueChange = { rightMargin = it })
-                        InsetDivider()
-                    } else if (position == HchatExtraSettings.POSITION_AVATAR_ABOVE ||
-                        position == HchatExtraSettings.POSITION_AVATAR_BELOW
-                    ) {
-                        NumberInputRow("与头像间距", "单位 dp，可设置 0-64", avatarGap, onValueChange = { avatarGap = it })
-                        InsetDivider()
-                    }
                     ActionRow(
-                        title = "与气泡间距",
-                        summary = "上 ${bubbleTop.ifBlank { "0" }} · 下 ${bubbleBottom.ifBlank { "0" }} · 左 ${bubbleLeft.ifBlank { "0" }} · 右 ${bubbleRight.ifBlank { "0" }} dp",
-                        onClick = { showBubbleSpacingDialog = true }
+                        title = "距离设置",
+                        summary = "分别设置四种显示位置的上、下、左、右距离",
+                        onClick = {
+                            selectedDistancePosition = position
+                            showDistancePage = true
+                        }
                     )
                     InsetDivider()
                     NumberInputRow("字体大小", "单位 sp", textSize, onValueChange = { textSize = it })
@@ -5545,28 +5560,77 @@ internal fun MessageDetailsConfigPage(
         }
     }
 
-    WindowDialog(
-        show = showBubbleSpacingDialog,
-        title = "与气泡间距",
-        onDismissRequest = { showBubbleSpacingDialog = false },
-        content = {
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                NumberInputRow("上", "单位 dp，可设置 0-64，向上调整", bubbleTop, onValueChange = { bubbleTop = it })
-                InsetDivider()
-                NumberInputRow("下", "单位 dp，可设置 0-64，向下调整", bubbleBottom, onValueChange = { bubbleBottom = it })
-                InsetDivider()
-                NumberInputRow("左", "单位 dp，可设置 0-64，向左调整", bubbleLeft, onValueChange = { bubbleLeft = it })
-                InsetDivider()
-                NumberInputRow("右", "单位 dp，可设置 0-64，向右调整", bubbleRight, onValueChange = { bubbleRight = it })
-                TextButton(
-                    text = "完成",
-                    onClick = { showBubbleSpacingDialog = false },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    colors = ButtonDefaults.textButtonColorsPrimary()
-                )
+}
+
+@Composable
+private fun MessageDetailsDistancePage(
+    selectedPosition: String,
+    drafts: Map<String, MessageDetailsDistanceDraft>,
+    onPositionChanged: (String) -> Unit,
+    onDraftsChanged: (Map<String, MessageDetailsDistanceDraft>) -> Unit,
+    onBack: () -> Unit
+) {
+    val selectedDistance = drafts[selectedPosition] ?: MessageDetailsDistanceDraft()
+    fun updateSelectedDistance(transform: (MessageDetailsDistanceDraft) -> MessageDetailsDistanceDraft) {
+        onDraftsChanged(drafts + (selectedPosition to transform(selectedDistance)))
+    }
+    val listState = rememberLazyListState()
+    val scrollBehavior = MiuixScrollBehavior()
+    PageScaffold(
+        title = "距离设置",
+        largeTitle = "距离设置",
+        scrollBehavior = scrollBehavior,
+        bottomBar = {
+            BottomActionBar(
+                primaryText = "完成",
+                onPrimaryClick = onBack,
+                secondaryText = "返回",
+                onSecondaryClick = onBack
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+            state = listState,
+            contentPadding = PaddingValues(
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 84.dp
+            )
+        ) {
+            item { SmallTitle(text = "显示位置") }
+            item {
+                SettingsCard {
+                    PopupChoiceRow(
+                        title = "调整对象",
+                        summary = messageDetailsPositionLabel(selectedPosition),
+                        options = messageDetailsPositionChoices(),
+                        currentValue = selectedPosition,
+                        onValueChanged = onPositionChanged
+                    )
+                }
+            }
+            item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "上下左右距离") }
+            item {
+                SettingsCard {
+                    NumberInputRow("上", "单位 dp，可设置 0-64，向上调整", selectedDistance.top, onValueChange = { value ->
+                        updateSelectedDistance { it.copy(top = value) }
+                    })
+                    InsetDivider()
+                    NumberInputRow("下", "单位 dp，可设置 0-64，向下调整", selectedDistance.bottom, onValueChange = { value ->
+                        updateSelectedDistance { it.copy(bottom = value) }
+                    })
+                    InsetDivider()
+                    NumberInputRow("左", "单位 dp，可设置 0-64，向左调整", selectedDistance.left, onValueChange = { value ->
+                        updateSelectedDistance { it.copy(left = value) }
+                    })
+                    InsetDivider()
+                    NumberInputRow("右", "单位 dp，可设置 0-64，向右调整", selectedDistance.right, onValueChange = { value ->
+                        updateSelectedDistance { it.copy(right = value) }
+                    })
+                }
             }
         }
-    )
+    }
 }
 
 internal fun cleanMessageDetailsColor(value: String, fallback: String): String {

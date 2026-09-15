@@ -3838,7 +3838,7 @@ internal fun featureSubSearchTerms(featureId: String): List<String> {
         TypingReportBlockFeature.ID -> listOf("拦截正在输入上报", "屏蔽正在输入", "正在输入", "输入状态", "输入上报")
         PatBlockFeature.ID -> listOf("禁止拍一拍", "屏蔽拍一拍", "双击头像", "头像双击")
         MessageDetailsSettingsProvider.FEATURE_ID -> listOf(
-            "消息显示时间", "消息显示详情", "消息详情", "消息时间", "消息类型", "时间格式", "时间颜色", "显示位置", "消息气泡旁边", "消息气泡右方", "与气泡间距", "上下左右调节", "点击显详情"
+            "消息显示时间", "消息显示详情", "消息详情", "消息时间", "消息类型", "时间格式", "时间颜色", "显示位置", "消息气泡旁边", "消息气泡右方", "距离设置", "上下左右调节", "点击显详情"
         )
         GroupMemberHistorySettingsProvider.FEATURE_ID -> listOf("历史发言记录", "群成员历史发言", "群成员资料")
         AtAllNotificationBlockFeature.ID -> listOf("屏蔽艾特所有人", "屏蔽@所有人", "艾特全体", "通知拦截")
