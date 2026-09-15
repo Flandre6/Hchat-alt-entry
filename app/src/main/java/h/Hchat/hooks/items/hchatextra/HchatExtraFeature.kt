@@ -151,10 +151,7 @@ private class HchatExtraHooker(
         val timeFormatter: DateTimeFormatter,
         val textSizeSp: Float,
         val avatarGapDp: Int,
-        val bubbleTopDp: Int,
-        val bubbleBottomDp: Int,
-        val bubbleLeftDp: Int,
-        val bubbleRightDp: Int,
+        val distanceOffsets: Map<String, MessageDetailsDistanceOffset>,
         val leftMarginDp: Int,
         val rightMarginDp: Int,
         val clickShow: Boolean,
@@ -162,6 +159,13 @@ private class HchatExtraHooker(
         val darkTextColor: Int,
         val lightBgColor: Int,
         val darkBgColor: Int
+    )
+
+    private data class MessageDetailsDistanceOffset(
+        val topDp: Int,
+        val bottomDp: Int,
+        val leftDp: Int,
+        val rightDp: Int
     )
 
     private data class MessageAccessorKey(
@@ -313,22 +317,7 @@ private class HchatExtraHooker(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP,
                 HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP
             ).coerceIn(0, 64),
-            bubbleTopDp = prefs.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP
-            ).coerceIn(0, 64),
-            bubbleBottomDp = prefs.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM
-            ).coerceIn(0, 64),
-            bubbleLeftDp = prefs.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT
-            ).coerceIn(0, 64),
-            bubbleRightDp = prefs.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT
-            ).coerceIn(0, 64),
+            distanceOffsets = MESSAGE_DETAILS_POSITIONS.associateWith(::readMessageDetailsDistanceOffset),
             leftMarginDp = prefs.getInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
                 HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN
@@ -370,6 +359,23 @@ private class HchatExtraHooker(
                 Color.TRANSPARENT
             )
         )
+    }
+
+    private fun readMessageDetailsDistanceOffset(position: String): MessageDetailsDistanceOffset {
+        fun value(direction: String): Int = prefs.getInt(
+            HchatExtraSettings.messageDetailsDistanceKey(position, direction),
+            0
+        ).coerceIn(0, 64)
+        return MessageDetailsDistanceOffset(
+            topDp = value(HchatExtraSettings.DISTANCE_TOP),
+            bottomDp = value(HchatExtraSettings.DISTANCE_BOTTOM),
+            leftDp = value(HchatExtraSettings.DISTANCE_LEFT),
+            rightDp = value(HchatExtraSettings.DISTANCE_RIGHT)
+        )
+    }
+
+    private fun messageDetailsDistanceOffset(position: String): MessageDetailsDistanceOffset {
+        return messageDetailsConfig.distanceOffsets[position] ?: ZERO_MESSAGE_DETAILS_DISTANCE_OFFSET
     }
 
     private fun schedulePreDraw(
@@ -1544,7 +1550,7 @@ private class HchatExtraHooker(
                     parent.offsetDescendantRectToMyCoords(view, it)
                 }
             }
-        val left = if (target.hidden) {
+        val anchoredLeft = if (target.hidden) {
             if (isSelf) {
                 (contentBounds?.right?.minus(labelWidth) ?: maxLeft).coerceIn(minLeft, maxLeft)
             } else {
@@ -1553,11 +1559,15 @@ private class HchatExtraHooker(
         } else {
             (avatarBounds.left + (avatarBounds.width() - labelWidth) / 2).coerceIn(minLeft, maxLeft)
         }
-        val top = if (position == HchatExtraSettings.POSITION_AVATAR_ABOVE) {
+        val distance = messageDetailsDistanceOffset(position)
+        val horizontalOffset = dp(label.context, (distance.rightDp - distance.leftDp).toFloat())
+        val verticalOffset = dp(label.context, (distance.bottomDp - distance.topDp).toFloat())
+        val left = (anchoredLeft + horizontalOffset).coerceIn(minLeft, maxLeft)
+        val top = (if (position == HchatExtraSettings.POSITION_AVATAR_ABOVE) {
             avatarBounds.top - label.measuredHeight - gap
         } else {
             avatarBounds.bottom + gap
-        }
+        }) + verticalOffset
         if (position == HchatExtraSettings.POSITION_AVATAR_BELOW) {
             val overflow = top + label.measuredHeight - parent.height
             if (overflow > 0 && expandAvatarBelowSpacing(parent, overflow)) {
@@ -1697,9 +1707,10 @@ private class HchatExtraHooker(
         val leftSide = bubbleBounds.left - gap - label.measuredWidth
         // Keep the label on the conversation-facing side of the bubble:
         // incoming messages use the right edge, outgoing messages use the left edge.
+        val distance = messageDetailsDistanceOffset(HchatExtraSettings.POSITION_BUBBLE_RIGHT)
         val horizontalOffset = dp(
             label.context,
-            (messageDetailsConfig.bubbleRightDp - messageDetailsConfig.bubbleLeftDp).toFloat()
+            (distance.rightDp - distance.leftDp).toFloat()
         )
         val left = ((if (isSelf) leftSide else rightSide) + horizontalOffset)
             .coerceIn(minLeft, maxLeft)
@@ -1709,8 +1720,8 @@ private class HchatExtraHooker(
         // WeChat's read-state/time placement instead of floating at mid-height.
         val top = (
             bubbleBounds.bottom - label.measuredHeight +
-                dp(label.context, messageDetailsConfig.bubbleBottomDp.toFloat()) -
-                dp(label.context, messageDetailsConfig.bubbleTopDp.toFloat())
+                dp(label.context, distance.bottomDp.toFloat()) -
+                dp(label.context, distance.topDp.toFloat())
             ).coerceIn(parent.paddingTop, maxTop)
         val params = label.layoutParams as? RelativeLayout.LayoutParams ?: return false
         params.width = label.measuredWidth
@@ -1741,10 +1752,13 @@ private class HchatExtraHooker(
         val alreadyAttached = oldParent === parent
         if (oldParent != null && !alreadyAttached) oldParent.removeView(label)
         val config = messageDetailsConfig
+        val distance = messageDetailsDistanceOffset(HchatExtraSettings.POSITION_MESSAGE_BOTTOM)
+        val horizontalOffset = dp(label.context, (distance.rightDp - distance.leftDp).toFloat()).toFloat()
+        val verticalOffset = dp(label.context, (distance.bottomDp - distance.topDp).toFloat()).toFloat()
         val edge = dp(label.context, config.leftMarginDp.toFloat())
         val right = dp(label.context, config.rightMarginDp.toFloat())
-        if (label.translationX != 0f) label.translationX = 0f
-        if (label.translationY != 0f) label.translationY = 0f
+        if (label.translationX != horizontalOffset) label.translationX = horizontalOffset
+        if (label.translationY != verticalOffset) label.translationY = verticalOffset
         if (parent is RelativeLayout) {
             ensureViewId(content)
             val expectedParams = RelativeLayout.LayoutParams(
@@ -3648,6 +3662,21 @@ private class HchatExtraHooker(
         private const val MESSAGE_DETAILS_MAX_RETRY = 2
         private const val MESSAGE_DETAILS_POSITION_MAX_RETRY = 4
         private const val MESSAGE_DETAILS_BUBBLE_GAP_DP = 4f
+        private val ZERO_MESSAGE_DETAILS_DISTANCE_OFFSET = MessageDetailsDistanceOffset(0, 0, 0, 0)
+        private val MESSAGE_DETAILS_POSITIONS = listOf(
+            HchatExtraSettings.POSITION_MESSAGE_BOTTOM,
+            HchatExtraSettings.POSITION_BUBBLE_RIGHT,
+            HchatExtraSettings.POSITION_AVATAR_ABOVE,
+            HchatExtraSettings.POSITION_AVATAR_BELOW
+        )
+        private val MESSAGE_DETAILS_DISTANCE_KEYS = MESSAGE_DETAILS_POSITIONS.flatMap { position ->
+            listOf(
+                HchatExtraSettings.DISTANCE_TOP,
+                HchatExtraSettings.DISTANCE_BOTTOM,
+                HchatExtraSettings.DISTANCE_LEFT,
+                HchatExtraSettings.DISTANCE_RIGHT
+            ).map { direction -> HchatExtraSettings.messageDetailsDistanceKey(position, direction) }
+        }.toSet()
         private val MESSAGE_DETAILS_COLOR_KEYS = setOf(
             HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_BG,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_TEXT,
@@ -3658,13 +3687,9 @@ private class HchatExtraHooker(
             HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_TEXT_SIZE,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP,
-            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP,
-            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM,
-            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT,
-            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_RIGHT_MARGIN
-        )
+        ) + MESSAGE_DETAILS_DISTANCE_KEYS
         private val MESSAGE_DETAILS_REBIND_KEYS = MESSAGE_DETAILS_LAYOUT_KEYS + setOf(
             HchatExtraSettings.KEY_MESSAGE_DETAILS_FORMAT,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_TIME_FORMAT,
