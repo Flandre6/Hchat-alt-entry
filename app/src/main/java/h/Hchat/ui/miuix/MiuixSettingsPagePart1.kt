@@ -5278,6 +5278,19 @@ internal fun MessageDetailsConfigPage(
             ).toString()
         )
     }
+    var bubbleTop by remember {
+        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP).toString())
+    }
+    var bubbleBottom by remember {
+        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM).toString())
+    }
+    var bubbleLeft by remember {
+        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT).toString())
+    }
+    var bubbleRight by remember {
+        mutableStateOf(sp.getInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT).toString())
+    }
+    var showBubbleSpacingDialog by remember { mutableStateOf(false) }
     var leftMargin by remember {
         mutableStateOf(
             sp.getInt(
@@ -5329,6 +5342,10 @@ internal fun MessageDetailsConfigPage(
         timeFormat = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TIME_FORMAT
         position = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
         avatarGap = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP.toString()
+        bubbleTop = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP.toString()
+        bubbleBottom = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM.toString()
+        bubbleLeft = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT.toString()
+        bubbleRight = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT.toString()
         leftMargin = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN.toString()
         rightMargin = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_RIGHT_MARGIN.toString()
         textSize = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TEXT_SIZE.toString()
@@ -5355,6 +5372,10 @@ internal fun MessageDetailsConfigPage(
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_TIME_FORMAT, timeFormat.ifBlank { HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TIME_FORMAT })
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION, savedPosition)
             .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP, savedAvatarGap)
+            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP, bubbleTop.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP)
+            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM, bubbleBottom.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM)
+            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT, bubbleLeft.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT)
+            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT, bubbleRight.toIntOrNull()?.coerceIn(0, 64) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT)
             .putInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
                 leftMargin.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN
@@ -5376,6 +5397,10 @@ internal fun MessageDetailsConfigPage(
         darkText = savedDarkText
         position = savedPosition
         avatarGap = savedAvatarGap.toString()
+        bubbleTop = bubbleTop.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
+        bubbleBottom = bubbleBottom.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
+        bubbleLeft = bubbleLeft.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
+        bubbleRight = bubbleRight.toIntOrNull()?.coerceIn(0, 64)?.toString() ?: "0"
         Toast.makeText(context, "设置已保存", Toast.LENGTH_SHORT).show()
     }
 
@@ -5499,6 +5524,12 @@ internal fun MessageDetailsConfigPage(
                         NumberInputRow("与头像间距", "单位 dp，可设置 0-64", avatarGap, onValueChange = { avatarGap = it })
                         InsetDivider()
                     }
+                    ActionRow(
+                        title = "与气泡间距",
+                        summary = "上 ${bubbleTop.ifBlank { "0" }} · 下 ${bubbleBottom.ifBlank { "0" }} · 左 ${bubbleLeft.ifBlank { "0" }} · 右 ${bubbleRight.ifBlank { "0" }} dp",
+                        onClick = { showBubbleSpacingDialog = true }
+                    )
+                    InsetDivider()
                     NumberInputRow("字体大小", "单位 sp", textSize, onValueChange = { textSize = it })
                 }
             }
@@ -5513,6 +5544,29 @@ internal fun MessageDetailsConfigPage(
             }
         }
     }
+
+    WindowDialog(
+        show = showBubbleSpacingDialog,
+        title = "与气泡间距",
+        onDismissRequest = { showBubbleSpacingDialog = false },
+        content = {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                NumberInputRow("上", "单位 dp，可设置 0-64，向上调整", bubbleTop, onValueChange = { bubbleTop = it })
+                InsetDivider()
+                NumberInputRow("下", "单位 dp，可设置 0-64，向下调整", bubbleBottom, onValueChange = { bubbleBottom = it })
+                InsetDivider()
+                NumberInputRow("左", "单位 dp，可设置 0-64，向左调整", bubbleLeft, onValueChange = { bubbleLeft = it })
+                InsetDivider()
+                NumberInputRow("右", "单位 dp，可设置 0-64，向右调整", bubbleRight, onValueChange = { bubbleRight = it })
+                TextButton(
+                    text = "完成",
+                    onClick = { showBubbleSpacingDialog = false },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    colors = ButtonDefaults.textButtonColorsPrimary()
+                )
+            }
+        }
+    )
 }
 
 internal fun cleanMessageDetailsColor(value: String, fallback: String): String {

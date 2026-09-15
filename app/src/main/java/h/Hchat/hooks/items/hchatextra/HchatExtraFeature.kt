@@ -151,6 +151,10 @@ private class HchatExtraHooker(
         val timeFormatter: DateTimeFormatter,
         val textSizeSp: Float,
         val avatarGapDp: Int,
+        val bubbleTopDp: Int,
+        val bubbleBottomDp: Int,
+        val bubbleLeftDp: Int,
+        val bubbleRightDp: Int,
         val leftMarginDp: Int,
         val rightMarginDp: Int,
         val clickShow: Boolean,
@@ -308,6 +312,22 @@ private class HchatExtraHooker(
             avatarGapDp = prefs.getInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP,
                 HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP
+            ).coerceIn(0, 64),
+            bubbleTopDp = prefs.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP
+            ).coerceIn(0, 64),
+            bubbleBottomDp = prefs.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM
+            ).coerceIn(0, 64),
+            bubbleLeftDp = prefs.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT
+            ).coerceIn(0, 64),
+            bubbleRightDp = prefs.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT
             ).coerceIn(0, 64),
             leftMarginDp = prefs.getInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
@@ -1677,17 +1697,21 @@ private class HchatExtraHooker(
         val leftSide = bubbleBounds.left - gap - label.measuredWidth
         // Keep the label on the conversation-facing side of the bubble:
         // incoming messages use the right edge, outgoing messages use the left edge.
-        val left = if (isSelf) {
-            leftSide.coerceIn(minLeft, maxLeft)
-        } else {
-            rightSide.coerceIn(minLeft, maxLeft)
-        }
+        val horizontalOffset = dp(
+            label.context,
+            (messageDetailsConfig.bubbleRightDp - messageDetailsConfig.bubbleLeftDp).toFloat()
+        )
+        val left = ((if (isSelf) leftSide else rightSide) + horizontalOffset)
+            .coerceIn(minLeft, maxLeft)
         val maxTop = (parent.height - parent.paddingBottom - label.measuredHeight)
             .coerceAtLeast(parent.paddingTop)
         // Keep the details near the lower outside corner of the bubble, matching
         // WeChat's read-state/time placement instead of floating at mid-height.
-        val top = (bubbleBounds.bottom - label.measuredHeight)
-            .coerceIn(parent.paddingTop, maxTop)
+        val top = (
+            bubbleBounds.bottom - label.measuredHeight +
+                dp(label.context, messageDetailsConfig.bubbleBottomDp.toFloat()) -
+                dp(label.context, messageDetailsConfig.bubbleTopDp.toFloat())
+            ).coerceIn(parent.paddingTop, maxTop)
         val params = label.layoutParams as? RelativeLayout.LayoutParams ?: return false
         params.width = label.measuredWidth
         params.height = label.measuredHeight
@@ -3634,6 +3658,10 @@ private class HchatExtraHooker(
             HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_TEXT_SIZE,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP,
+            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_TOP,
+            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM,
+            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_LEFT,
+            HchatExtraSettings.KEY_MESSAGE_DETAILS_BUBBLE_RIGHT,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
             HchatExtraSettings.KEY_MESSAGE_DETAILS_RIGHT_MARGIN
         )
