@@ -6,7 +6,6 @@ import h.Hchat.hooks.core.BaseFeature
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.core.DexInstallScheduler
 import h.Hchat.hooks.items.script.ScriptNewFriendHook
-import h.Hchat.utils.HLog
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AutoReplyFeature : BaseFeature() {
@@ -30,13 +29,13 @@ class AutoReplyFeature : BaseFeature() {
                     AutoReplyRuntime.handleMessage(context.hostContext(), message)
                 })
             }
-            if (friendHookInstalled.compareAndSet(false, true)) {
-                ScriptNewFriendHook.install(context)
+            if (!friendHookInstalled.get() && ScriptNewFriendHook.install(context)
+                && friendHookInstalled.compareAndSet(false, true)) {
                 trackSubscription(ScriptNewFriendHook.subscribe { event ->
                     AutoReplyRuntime.handleNewFriend(context.hostContext(), event.wxid, event.ticket, event.scene)
                 })
             }
-            return true
+            return observe.isAvailable
         }
         DexInstallScheduler.schedule(
             "auto_reply:observer", "自动回复消息监听", DexInstallScheduler.Stage.BRIDGE
@@ -50,6 +49,5 @@ class AutoReplyFeature : BaseFeature() {
 
     companion object {
         const val ID = "auto_reply"
-        private const val TAG = "[Hchat:AutoReply]"
     }
 }

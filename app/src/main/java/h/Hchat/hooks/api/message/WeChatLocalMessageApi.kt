@@ -23,6 +23,8 @@ class WeChatLocalMessageApi(
     private val pendingCreateTime = ThreadLocal<TimedInsert?>()
     @Volatile
     private var createTimeHookInstalled = false
+    private val pendingSystemInsert = ThreadLocal<SystemInsert?>()
+    @Volatile private var insertResultHookInstalled = false
 
     fun interface Logger {
         fun log(message: String)
@@ -34,7 +36,8 @@ class WeChatLocalMessageApi(
 
     fun ensureReady() {
         val finder = dexFinder ?: return
-        if (!finder.hasLocalMessageApi() || finder.localMessageCreateTimeMethod == null) {
+        if (!finder.hasLocalMessageApi() || finder.localMessageCreateTimeMethod == null
+            || (finder.localSystemMessageMethod != null && finder.localSystemMessageInsertMethod == null)) {
             finder.resolveLocalMessageApi()
         }
         installCreateTimeHook()
@@ -86,18 +89,11 @@ class WeChatLocalMessageApi(
             log("插入系统消息失败: 本地消息API未就绪")
             return 0L
         }
-        if (!useWechatCreateTime && !installCreateTimeHook()) {
+        if (!useWechatCreateTime && finder.localSystemMessageMethod != null && !installCreateTimeHook()) {
             log("插入系统消息失败: createTime hook 未就绪")
             return 0L
         }
         return runCatching {
-            // Timed notices (anti-recall) are more reliable through the message
-            // model insert path on newer WeChat builds. The system-message helper
-            // can return normally while silently dropping a back-dated row.
-            if (!useWechatCreateTime) {
-                val timed = insertDirectMessage(finder, talker.orEmpty(), content.orEmpty(), createTime)
-                if (timed > 0L) return@runCatching timed
-            }
             insertViaWechatSystemMessageMethod(
                 finder,
                 talker.orEmpty(),
@@ -114,13 +110,6 @@ class WeChatLocalMessageApi(
         }.getOrDefault(0L)
     }
 
-    private fun insertDirectMessage(finder: DexFinder, talker: String, content: String, createTime: Long): Long {
-        val msg = newMessage(finder, talker) ?: return 0L
-        fillSystemMessage(msg, talker, content, createTime, false)
-        val result = KavaReflector.invoke(finder.localMessageInsertMethod, null, msg)
-        return (result as? Number)?.toLong() ?: 0L
-    }
-
     private fun insertViaWechatSystemMessageMethod(
         finder: DexFinder,
         talker: String,
@@ -128,17 +117,43 @@ class WeChatLocalMessageApi(
         createTime: Long?
     ): Long? {
         val method = finder.localSystemMessageMethod ?: return null
+        if (!installInsertResultHook(finder)) {
+            throw IllegalStateException("系统消息插入结果 Hook 未就绪")
+        }
         val owner = newSystemMessageOwner(finder, method)
             ?: throw IllegalStateException("系统消息API实例创建失败")
+        val previousTime = pendingCreateTime.get()
+        val previousInsert = pendingSystemInsert.get()
+        val insertion = SystemInsert()
+        pendingSystemInsert.set(insertion)
         if (createTime != null) {
             pendingCreateTime.set(TimedInsert(talker, createTime))
         }
         return try {
-            KavaReflector.invoke(method, owner, talker, content, "")
-            1L
+            check(KavaReflector.invokeSuccessfully(method, owner, talker, content, "")) {
+                "系统消息方法调用失败: $method"
+            }
+            if (insertion.result <= 0L) log("系统消息未写入: method=$method result=${insertion.result}")
+            insertion.result
         } finally {
-            if (createTime != null) pendingCreateTime.remove()
+            if (previousTime == null) pendingCreateTime.remove() else pendingCreateTime.set(previousTime)
+            if (previousInsert == null) pendingSystemInsert.remove() else pendingSystemInsert.set(previousInsert)
         }
+    }
+
+    @Synchronized
+    private fun installInsertResultHook(finder: DexFinder): Boolean {
+        if (insertResultHookInstalled) return true
+        if (finder.localSystemMessageInsertMethod == null) finder.resolveLocalMessageApi()
+        val insert = finder.localSystemMessageInsertMethod ?: return false
+        HookRegistry.get().hook(insert, object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val pending = pendingSystemInsert.get() ?: return
+                if (!param.hasThrowable()) pending.result = (param.result as? Number)?.toLong() ?: 0L
+            }
+        })
+        insertResultHookInstalled = true
+        return true
     }
 
     private fun newSystemMessageOwner(finder: DexFinder, method: Method): Any? {
@@ -313,4 +328,6 @@ class WeChatLocalMessageApi(
         val talker: String,
         val createTime: Long
     )
+
+    private class SystemInsert(var result: Long = 0L)
 }

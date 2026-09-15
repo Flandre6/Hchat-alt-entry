@@ -376,11 +376,13 @@ public final class WeChatMessageObserveApi {
     private final Logger logger;
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final ConcurrentHashMap<String, Long> recentOutgoing = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long> recentIncomingDatabaseMessages = new ConcurrentHashMap<>();
+    // Access only under this map's monitor; insertion order makes eviction constant-time.
+    private final java.util.LinkedHashMap<String, Long> recentIncomingDatabaseMessages = new java.util.LinkedHashMap<>();
     private volatile boolean installed;
     private volatile boolean pbLayerActive;
     private volatile boolean dbLayerActive;
     private volatile long databaseIncomingStartedAt;
+    private final java.util.Set<String> loggedIncomingSources = ConcurrentHashMap.newKeySet();
 
     public WeChatMessageObserveApi(WeChatMessageEventApi eventApi,
                                    WeChatMessageChangeApi changeApi,
@@ -426,7 +428,7 @@ public final class WeChatMessageObserveApi {
             changeApi.subscribe(this::onMessageChanged);
             dbLayerActive = true;
         }
-        installed = true;
+        installed = pbLayerActive || dbLayerActive;
         log("消息观察已安装: pb=" + usePbLayer
                 + " db=" + (changeApi != null && changeApi.isAvailable()));
     }
@@ -449,6 +451,7 @@ public final class WeChatMessageObserveApi {
                 event.msgSource,
                 selfWxId());
         String kind = kindOf(transientMessage, nativeUrl);
+        if (!outgoing && !claimIncomingMessage(transientMessage)) return;
         if (outgoing && !"local_send".equals(source)) {
             markOutgoing(event.talker, event.content);
             WeChatMessageApi.cancelPendingLocalSend(event.talker, event.content);
@@ -518,7 +521,6 @@ public final class WeChatMessageObserveApi {
     private void onMessageChanged(WeChatMessageChangeApi.MessageChange change) {
         if (change == null || change.message == null) return;
         WeChatMessage msg = change.message;
-        if (pbLayerActive && !msg.isOutgoing()) return;
         if (!msg.isOutgoing() && (!change.isInsert() || !claimIncomingDatabaseMessage(msg))) return;
         if (msg.isOutgoing() && isRecentOutgoing(msg.talker, msg.content)) return;
         if (msg.isOutgoing()) {
@@ -528,7 +530,7 @@ public final class WeChatMessageObserveApi {
                 "message_db",
                 kindOf(msg),
                 msg.talker,
-                msg.isOutgoing() ? selfWxId() : "",
+                msg.isOutgoing() ? selfWxId() : msg.getSendTalker(),
                 msg.content,
                 parseApi != null ? parseApi.extractXml(msg.content) : msg.content,
                 parseNativeUrl(msg.content),
@@ -548,24 +550,32 @@ public final class WeChatMessageObserveApi {
                 || createTime > now + INCOMING_DATABASE_FRESHNESS_MS) {
             return false;
         }
-        String key;
-        if (message.msgSvrId > 0L) {
-            key = "svr:" + message.msgSvrId;
-        } else if (message.msgId > 0L) {
-            key = "local:" + message.msgId;
-        } else {
-            key = "fallback:" + message.talker + ':' + message.type + ':' + createTime + ':'
-                    + Integer.toHexString(message.content.hashCode());
-        }
-        if (recentIncomingDatabaseMessages.putIfAbsent(key, now) != null) return false;
-        cleanupIncomingDatabaseMessages(now);
-        return true;
+        return claimIncomingMessage(message);
     }
 
-    private void cleanupIncomingDatabaseMessages(long now) {
-        if (recentIncomingDatabaseMessages.size() < 1024) return;
-        recentIncomingDatabaseMessages.entrySet().removeIf(
-                entry -> now - entry.getValue() > INCOMING_DATABASE_DEDUP_TTL_MS);
+    private boolean claimIncomingMessage(WeChatMessage message) {
+        long now = System.currentTimeMillis();
+        long createTime = message.createTime;
+        if (createTime > 0L && createTime < 100000000000L) createTime *= 1000L;
+        String key;
+        if (message.msgSvrId > 0L) {
+            key = "svr:" + message.talker + ':' + message.msgSvrId;
+        } else {
+            key = "local:" + message.talker + ':' + message.msgId + ':'
+                    + message.type + ':' + createTime + ':' + message.content;
+        }
+        synchronized (recentIncomingDatabaseMessages) {
+            Long previous = recentIncomingDatabaseMessages.get(key);
+            if (previous != null && now - previous < INCOMING_DATABASE_DEDUP_TTL_MS) return false;
+            recentIncomingDatabaseMessages.remove(key);
+            if (recentIncomingDatabaseMessages.size() >= 4096) {
+                java.util.Iterator<String> oldest = recentIncomingDatabaseMessages.keySet().iterator();
+                oldest.next();
+                oldest.remove();
+            }
+            recentIncomingDatabaseMessages.put(key, now);
+            return true;
+        }
     }
 
     private void markOutgoing(String talker, String content) {
@@ -672,6 +682,10 @@ public final class WeChatMessageObserveApi {
     }
 
     private void dispatch(ObservedMessage message) {
+        if (!message.outgoing && loggedIncomingSources.add(message.source)) {
+            log("消息观察首次收到: source=" + message.source + " kind=" + message.kind
+                    + " listeners=" + listeners.size());
+        }
         for (Listener listener : listeners) {
             try {
                 listener.onObservedMessage(message);

@@ -48,13 +48,17 @@ public final class WeChatMessageEventApi {
     }
 
     public boolean isAvailable() {
+        return hooked && parseApi != null && eventBus != null;
+    }
+
+    private boolean hasCandidates() {
         return dexFinder != null && dexFinder.addMsgClasses != null
                 && !dexFinder.addMsgClasses.isEmpty()
                 && parseApi != null && eventBus != null;
     }
 
-    public void installAddMsgHook() {
-        if (!isAvailable()) return;
+    public synchronized void installAddMsgHook() {
+        if (!hasCandidates()) return;
         if (hooked) {
             installPatMsgHook();
             return;

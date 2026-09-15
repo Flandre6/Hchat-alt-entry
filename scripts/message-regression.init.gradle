@@ -1,0 +1,20 @@
+// Host-JVM tests only: fixtures never enter an APK source set.
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.project(':app')
+    def production = app.tasks.named('compileDebugJavaWithJavac')
+    def fixtureDir = app.layout.buildDirectory.dir('message-regression/classes')
+    def compile = app.tasks.register('compileMessageRegression', JavaCompile) {
+        dependsOn production
+        source = app.fileTree('../scripts/message-regression') { include '**/*.java' }
+        classpath = app.files(production.map { it.classpath }, production.map { it.destinationDirectory })
+        destinationDirectory = fixtureDir
+        sourceCompatibility = '17'
+        targetCompatibility = '17'
+        options.encoding = 'UTF-8'
+    }
+    app.tasks.register('messageRegression', JavaExec) {
+        dependsOn compile
+        classpath = app.files(fixtureDir, compile.map { it.classpath })
+        mainClass = 'MessageRegression'
+    }
+}

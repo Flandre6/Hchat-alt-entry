@@ -82,7 +82,7 @@ public class WechatApiFeature implements Feature {
                 context.dexKitBridge(), currentActivityApi, this::log);
         WeChatActivityStartApi activityStartApi = new WeChatActivityStartApi(this::log);
         WeChatMessageChangeApi messageChangeApi = new WeChatMessageChangeApi(
-                databaseListenerApi, messageStoreApi, accountApi, this::log);
+                databaseListenerApi, messageStoreApi, accountApi, context.dexFinder(), this::log);
         WeChatConversationChangeApi conversationChangeApi = new WeChatConversationChangeApi(
                 databaseListenerApi, conversationApi, this::log);
         WeChatContactChangeApi contactChangeApi = new WeChatContactChangeApi(
@@ -166,6 +166,7 @@ public class WechatApiFeature implements Feature {
                     conversationChangeApi.install();
                     contactChangeApi.install();
                     chatroomChangeApi.install();
+                    messageObserveApi.install();
                     return databaseListenerApi.isOperational() && messageChangeApi.isInstalled();
                 });
         DexInstallScheduler.scheduleTask(
@@ -203,6 +204,11 @@ public class WechatApiFeature implements Feature {
     private boolean isImportantLog(String message) {
         if (message == null) return false;
         return message.contains("失败")
+                || message.contains("消息观察已安装")
+                || message.contains("消息观察首次收到")
+                || message.contains("AddMsg事件Hook")
+                || message.contains("消息变更监听已安装")
+                || message.contains("消息存储监听已安装")
                 || message.contains("异常")
                 || message.contains("未找到")
                 || message.contains("为空")

@@ -2,6 +2,11 @@ package h.Hchat.hooks.api.message;
 
 import android.content.ContentValues;
 import android.text.TextUtils;
+import de.robv.android.xposed.XC_MethodHook;
+import h.Hchat.dexkit.DexFinder;
+import h.Hchat.hooks.core.HookRegistry;
+import h.Hchat.utils.KavaReflector;
+import java.lang.reflect.Method;
 
 import h.Hchat.hooks.api.contact.WeChatAccountApi;
 import h.Hchat.hooks.api.model.DatabaseChange;
@@ -73,6 +78,10 @@ public final class WeChatMessageChangeApi {
     private final Logger logger;
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile boolean installed;
+    private final DexFinder dexFinder;
+    private volatile boolean databaseSubscribed;
+    private volatile boolean storageHookInstalled;
+    private final ThreadLocal<Integer> storageDepth = ThreadLocal.withInitial(() -> 0);
 
     public WeChatMessageChangeApi(WeChatDatabaseListenerApi databaseListenerApi,
                                   WeChatMessageStoreApi messageStoreApi,
@@ -84,14 +93,23 @@ public final class WeChatMessageChangeApi {
                                   WeChatMessageStoreApi messageStoreApi,
                                   WeChatAccountApi accountApi,
                                   Logger logger) {
+        this(databaseListenerApi, messageStoreApi, accountApi, null, logger);
+    }
+
+    public WeChatMessageChangeApi(WeChatDatabaseListenerApi databaseListenerApi,
+                                  WeChatMessageStoreApi messageStoreApi,
+                                  WeChatAccountApi accountApi,
+                                  DexFinder dexFinder,
+                                  Logger logger) {
         this.databaseListenerApi = databaseListenerApi;
         this.messageStoreApi = messageStoreApi;
         this.accountApi = accountApi;
         this.logger = logger;
+        this.dexFinder = dexFinder;
     }
 
     public boolean isAvailable() {
-        return databaseListenerApi != null && databaseListenerApi.isAvailable();
+        return installed;
     }
 
     public boolean isInstalled() {
@@ -109,7 +127,12 @@ public final class WeChatMessageChangeApi {
     }
 
     public synchronized void install() {
-        if (installed || databaseListenerApi == null) return;
+        try {
+            installStorageHook();
+        } catch (Throwable error) {
+            log("消息存储监听安装失败: " + error.getMessage());
+        }
+        if (databaseListenerApi == null || databaseSubscribed) return;
         databaseListenerApi.install();
         if (!databaseListenerApi.isOperational()) {
             log("消息变更监听未就绪: databaseHooks="
@@ -120,9 +143,49 @@ public final class WeChatMessageChangeApi {
                     + databaseListenerApi.hookedWrapperInsertMethodCount());
             return;
         }
-        databaseListenerApi.subscribe(this::onDatabaseChanged);
+        databaseListenerApi.subscribe(change -> {
+            if (storageDepth.get() == 0) onDatabaseChanged(change);
+        });
+        databaseSubscribed = true;
         installed = true;
         log("消息变更监听已安装");
+    }
+
+    private void installStorageHook() {
+        if (storageHookInstalled || dexFinder == null) return;
+        dexFinder.resolveMessageStorageInsert();
+        Method insert = dexFinder.messageStorageInsertMethod;
+        if (insert == null) return;
+        Method convert = KavaReflector.findMethodRecursive(insert.getParameterTypes()[0], "convertTo");
+        if (convert == null || convert.getReturnType() != ContentValues.class) return;
+        HookRegistry.get().hook(insert, new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                storageDepth.set(storageDepth.get() + 1);
+            }
+
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                int depth = storageDepth.get() - 1;
+                if (depth > 0) {
+                    storageDepth.set(depth);
+                    return;
+                }
+                storageDepth.remove();
+                if (param.hasThrowable() || listeners.isEmpty()) return;
+                Object result = param.getResult();
+                if (!(result instanceof Number) || ((Number) result).longValue() <= 0L) return;
+                Object snapshot = KavaReflector.invoke(convert, param.args[0]);
+                if (!(snapshot instanceof ContentValues)) return;
+                ContentValues values = new ContentValues((ContentValues) snapshot);
+                values.put("msgId", ((Number) result).longValue());
+                onDatabaseChanged(new DatabaseChange(DatabaseChange.INSERT, "message", null,
+                        values, null, null, ((Number) result).longValue(), "storage:" + insert.getName()));
+            }
+        });
+        storageHookInstalled = true;
+        installed = true;
+        log("消息存储监听已安装: " + insert);
     }
 
     private void onDatabaseChanged(DatabaseChange change) {
@@ -148,7 +211,10 @@ public final class WeChatMessageChangeApi {
 
     private WeChatMessage resolveMessage(DatabaseChange change) {
         long msgId = resolveMsgId(change);
-        if (msgId > 0 && messageStoreApi != null) {
+        boolean complete = change.values != null && change.values.containsKey("talker")
+                && change.values.containsKey("content") && change.values.containsKey("type")
+                && change.values.containsKey("isSend") && change.values.containsKey("createTime");
+        if (!complete && msgId > 0 && messageStoreApi != null) {
             WeChatMessage stored = messageStoreApi.getMessageById(msgId);
             if (stored != null) return stored;
         }

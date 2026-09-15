@@ -121,6 +121,8 @@ public class DexFinder {
     public Class<?> localMessageClass;
     public Constructor<?> localMessageCtor;
     public Method localSystemMessageMethod;
+    public Method localSystemMessageInsertMethod;
+    public Method messageStorageInsertMethod;
     public Method localMessageInsertMethod;
     public Method localMessageCreateTimeMethod;
     // 视频发送高层入口
@@ -672,6 +674,17 @@ public class DexFinder {
                         cl, String.class, String.class, int.class, int.class, long.class);
                 Constructor<?> objectCtor = findCtorByExactTypes(
                         cl, String.class, String.class, int.class, int.class, Object.class);
+                // 8.0.78 (3180) added a trailing msgSource string to the
+                // NetSceneSendMsg constructor. Keep the existing slots so
+                // callers can use one cached constructor across versions.
+                if (longCtor == null) {
+                    longCtor = findCtorByExactTypes(
+                            cl, String.class, String.class, int.class, int.class, long.class, String.class);
+                }
+                if (objectCtor == null) {
+                    objectCtor = findCtorByExactTypes(
+                            cl, String.class, String.class, int.class, int.class, Object.class, String.class);
+                }
                 if (longCtor != null || objectCtor != null) {
                     sendTextMsgClass = cl;
                     sendTextMsgCtorLong = longCtor;
@@ -2883,7 +2896,8 @@ public class DexFinder {
 
     public void resolveLocalMessageApi() {
         try {
-            if (hasLocalMessageApi() && localMessageCreateTimeMethod != null) return;
+            if (hasLocalMessageApi() && localMessageCreateTimeMethod != null
+                    && (localSystemMessageMethod == null || localSystemMessageInsertMethod != null)) return;
             int candidateCount = resolveLocalMessageApiBySignature();
             logDetail("本地消息API: insert=" + methodName(localMessageInsertMethod)
                     + " system=" + methodName(localSystemMessageMethod)
@@ -2896,6 +2910,26 @@ public class DexFinder {
             }
         } catch (Throwable e) {
             h.Hchat.utils.HLog.e(TAG + " resolveLocalMessageApi 失败: " + e.getMessage(), e);
+        }
+    }
+
+    public synchronized void resolveMessageStorageInsert() {
+        if (messageStorageInsertMethod != null) return;
+        try {
+            for (MethodData data : dexKit.findMethod(mkMethodUsingStrings(
+                    "Error insert message getTableByTalker failed. talker:%s"))) {
+                Method method = data.getMethodInstance(classLoader);
+                Class<?>[] params = method.getParameterTypes();
+                if (!KavaReflector.isStatic(method) && method.getReturnType() == long.class
+                        && method.getDeclaringClass().getName().startsWith("com.tencent.mm.storage.")
+                        && params.length == 2 && params[1] == boolean.class
+                        && params[0].getName().startsWith("com.tencent.mm.storage.")) {
+                    messageStorageInsertMethod = KavaReflector.accessible(method);
+                    return;
+                }
+            }
+        } catch (Throwable error) {
+            h.Hchat.utils.HLog.e(TAG + " 消息存储插入入口定位失败", error);
         }
     }
 
@@ -2931,7 +2965,8 @@ public class DexFinder {
     }
 
     private void resolveLocalSystemMessageMethod() {
-        if (localSystemMessageMethod != null) return;
+        if (localSystemMessageMethod != null && localMessageCreateTimeMethod != null
+                && localSystemMessageInsertMethod != null) return;
         try {
             List<MethodData> methods = dexKit.findMethod(
                     mkMethodUsingStrings(
@@ -2944,6 +2979,27 @@ public class DexFinder {
                     Method method = methodData.getMethodInstance(classLoader);
                     if (!isLocalSystemMessageMethod(method)) continue;
                     localSystemMessageMethod = KavaReflector.accessible(method);
+                    // Follow the verified sysmsg helper's calls instead of
+                    // requiring an unrelated static method named x.
+                    for (MethodData invoked : methodData.getInvokes()) {
+                        Method callee;
+                        try {
+                            callee = invoked.getMethodInstance(classLoader);
+                        } catch (Throwable ignored) {
+                            // Constructor invokes and unavailable dependencies are not hook targets.
+                            continue;
+                        }
+                        if (isLocalMessageCreateTimeMethod(callee)) {
+                            localMessageCreateTimeMethod = KavaReflector.accessible(callee);
+                        }
+                        Class<?>[] params = callee.getParameterTypes();
+                        if (!KavaReflector.isStatic(callee) && callee.getReturnType() == long.class
+                                && params.length == 1
+                                && params[0].getName().startsWith("com.tencent.mm.storage.")
+                                && callee.getDeclaringClass().getName().startsWith("com.tencent.mm.storage.")) {
+                            localSystemMessageInsertMethod = KavaReflector.accessible(callee);
+                        }
+                    }
                     break;
                 } catch (Throwable ignored) {}
             }
@@ -2967,7 +3023,9 @@ public class DexFinder {
         localMessageInsertMethod = method;
         localMessageClass = method.getParameterTypes()[0];
         localMessageCtor = findLocalMessageConstructor(localMessageClass);
-        localMessageCreateTimeMethod = findLocalMessageCreateTimeMethod(method.getDeclaringClass());
+        if (localMessageCreateTimeMethod == null) {
+            localMessageCreateTimeMethod = findLocalMessageCreateTimeMethod(method.getDeclaringClass());
+        }
     }
 
     public void resolveGroupMemberDisplayName() {
@@ -3553,6 +3611,14 @@ public class DexFinder {
                     sendTextMsgClass, String.class, String.class, int.class, int.class, long.class);
             sendTextMsgCtorObject = findCtorByExactTypes(
                     sendTextMsgClass, String.class, String.class, int.class, int.class, Object.class);
+            if (sendTextMsgCtorLong == null) {
+                sendTextMsgCtorLong = findCtorByExactTypes(
+                        sendTextMsgClass, String.class, String.class, int.class, int.class, long.class, String.class);
+            }
+            if (sendTextMsgCtorObject == null) {
+                sendTextMsgCtorObject = findCtorByExactTypes(
+                        sendTextMsgClass, String.class, String.class, int.class, int.class, Object.class, String.class);
+            }
             if (localMessageClass == null && localMessageInsertMethod != null
                     && localMessageInsertMethod.getParameterTypes().length == 1) {
                 localMessageClass = localMessageInsertMethod.getParameterTypes()[0];

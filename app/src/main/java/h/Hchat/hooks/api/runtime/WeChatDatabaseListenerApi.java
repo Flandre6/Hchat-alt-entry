@@ -81,6 +81,7 @@ public final class WeChatDatabaseListenerApi {
     private final Set<Method> hookedMethods = ConcurrentHashMap.newKeySet();
     private final Set<Method> hookedWrapperMutationMethods = ConcurrentHashMap.newKeySet();
     private final Set<Method> hookedWrapperInsertMethods = ConcurrentHashMap.newKeySet();
+    private final Set<Method> hookedStandardInsertMethods = ConcurrentHashMap.newKeySet();
     // One logical operation can traverse wrapper, WCDB and Android SQLite hooks.
     private final ThreadLocal<Integer> mutationDepth = ThreadLocal.withInitial(() -> 0);
     private final ThreadLocal<Integer> queryDepth = ThreadLocal.withInitial(() -> 0);
@@ -120,13 +121,10 @@ public final class WeChatDatabaseListenerApi {
 
     public boolean isOperational() {
         Class<?> wrapperClass = dexFinder != null ? dexFinder.sqliteDbWrapperClass : null;
-        // Standard WCDB/Android SQLite hooks are a valid fallback when the
-        // obfuscated wrapper insert signature moved (seen in 8.0.78+).
-        // Requiring a wrapper insert would incorrectly disable all database
-        // observers even though hookedMethodCount contains working insert hooks.
+        // Count only installed insert hooks, never query-only hooks.
         boolean wrapperReady = wrapperClass != null && wrapperClass == hookedWrapperClass
                 && !hookedWrapperInsertMethods.isEmpty();
-        boolean standardReady = hookedMethodCount > 0;
+        boolean standardReady = !hookedStandardInsertMethods.isEmpty();
         return wrapperReady || standardReady;
     }
 
@@ -153,7 +151,7 @@ public final class WeChatDatabaseListenerApi {
     public synchronized void install() {
         if (!isAvailable()) return;
         Class<?> wrapperClass = dexFinder != null ? dexFinder.sqliteDbWrapperClass : null;
-        if (isOperational()) return;
+        if (isOperational() && wrapperClass == hookedWrapperClass) return;
         if (wrapperClass != hookedWrapperClass) {
             hookedWrapperMutationMethods.clear();
             hookedWrapperInsertMethods.clear();
@@ -291,12 +289,15 @@ public final class WeChatDatabaseListenerApi {
                     protected void afterHookedMethod(MethodHookParam param) {
                         if (query) {
                             leaveQuery();
-                        } else if (leaveMutation()) {
+                        } else if (leaveMutation() && !param.hasThrowable()) {
                             dispatchIfSuccessful(operation, method, param.args, param.getResult());
                         }
                     }
                 });
                 hookedMethods.add(method);
+                if (!allowObfuscatedWrapperMethod && DatabaseChange.INSERT.equals(operation)) {
+                    hookedStandardInsertMethods.add(method);
+                }
                 if (allowObfuscatedWrapperMethod && (operation != null || potentialMutation)) {
                     hookedWrapperMutationMethods.add(method);
                     if (DatabaseChange.INSERT.equals(operation) || potentialMutation) {

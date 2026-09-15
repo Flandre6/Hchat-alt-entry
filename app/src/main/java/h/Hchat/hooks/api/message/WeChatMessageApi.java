@@ -786,17 +786,26 @@ public final class WeChatMessageApi {
         if (sourceArgs != null) {
             Constructor<?> objectCtor = dexFinder.sendTextMsgCtorObject;
             if (objectCtor != null) {
+                if (objectCtor.getParameterTypes().length == 6) {
+                    return KavaReflector.newInstance(objectCtor, talker, content, messageType, sendFlag, sourceArgs, "");
+                }
                 return KavaReflector.newInstance(objectCtor, talker, content, messageType, sendFlag, sourceArgs);
             }
         }
 
         Constructor<?> longCtor = dexFinder.sendTextMsgCtorLong;
         if (longCtor != null) {
+            if (longCtor.getParameterTypes().length == 6) {
+                return KavaReflector.newInstance(longCtor, talker, content, messageType, sendFlag, 0L, "");
+            }
             return KavaReflector.newInstance(longCtor, talker, content, messageType, sendFlag, 0L);
         }
 
         Constructor<?> objectCtor = dexFinder.sendTextMsgCtorObject;
         if (objectCtor != null) {
+            if (objectCtor.getParameterTypes().length == 6) {
+                return KavaReflector.newInstance(objectCtor, talker, content, messageType, sendFlag, sourceArgs, "");
+            }
             return KavaReflector.newInstance(objectCtor, talker, content, messageType, sendFlag, sourceArgs);
         }
 
