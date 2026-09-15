@@ -148,7 +148,7 @@ class AntiSecureMessageFeature : BaseFeature() {
     }
 
     /**
-     * The direct security check is not the only menu gate on 8.0.77.  The verified
+     * The direct security check is not the only menu gate on 8.0.77/8.0.78.  The verified
      * single-message menu creator receives the selected row as its second parameter,
      * so hide the marker only while that creator builds this one menu.  The original
      * source is restored in the matching after callback and is never persisted here.
@@ -315,7 +315,7 @@ class AntiSecureMessageFeature : BaseFeature() {
     private companion object {
         const val MAX_CHECK_HOOKS = 6
         val SOURCE_SETTERS = arrayOf("setMsgSource", "setMsgsource", "setSource")
-        // 8.0.77 (e9) stores MsgInfo.msgSource in the obfuscated G field.
+        // 8.0.77/8.0.78 (e9) stores MsgInfo.msgSource in the obfuscated G field.
         val SOURCE_FIELDS = arrayOf("field_msgSource", "msgSource", "G", "g")
         val SECURE_NODE = Regex("<sec_msg_node\\b[^>]*>.*?</sec_msg_node>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         const val MESSAGE_PACKAGE = "com.tencent.mm.storage."

@@ -101,7 +101,7 @@ class SendSecureMessageFeature : BaseFeature() {
 
     /**
      * 表情发送会在本地消息入库后重新生成 MsgSource，因此通用入库 Hook 不足以覆盖
-     * 最终网络请求。这里按已确认的 8.0.76/8.0.77 链路补写两次标记。
+     * 最终网络请求。这里按已确认的 8.0.76/8.0.77/8.0.78 链路补写两次标记。
      */
     private fun installEmojiHooks(context: FeatureContext): Boolean {
         val version = WeChatApis.version()?.current()
@@ -453,7 +453,7 @@ class SendSecureMessageFeature : BaseFeature() {
         const val INSERT_ANCHOR = "Error insert message msg:%s talker:%s"
         const val SECURE_CHECK_ANCHOR = ".msgsource.sec_msg_node.sfn"
         val SOURCE_SETTERS = arrayOf("setMsgSource", "setMsgsource", "setSource")
-        // 8.0.77 (e9) stores MsgInfo.msgSource in the obfuscated G field.
+        // 8.0.77/8.0.78 (e9) stores MsgInfo.msgSource in the obfuscated G field.
         val SOURCE_FIELDS = arrayOf("field_msgSource", "msgSource", "G", "g")
         const val VIDEO_COMPAT = 62
         const val MESSAGE_PACKAGE = "com.tencent.mm.storage."

@@ -15,6 +15,14 @@ internal data class EmojiSecureMessageProfile(
                 sourceOwner = "ft1.d1",
                 emojiScene = "k52.y"
             )
+            // 微信 8.0.78 (3180) keeps the 8.0.77 emoji send dispatch
+            // shape in the inspected arm64 APK.  Keep this mapping explicit
+            // so the feature is enabled for the new version while still
+            // failing closed if a later hotfix changes either class.
+            name == "8.0.78" && code == 3180L -> EmojiSecureMessageProfile(
+                sourceOwner = "ft1.d1",
+                emojiScene = "k52.y"
+            )
             else -> null
         }
     }

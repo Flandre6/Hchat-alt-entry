@@ -73,7 +73,7 @@ internal fun SecureMessageMiuixPage(
                         if (isAnti) false else SecureMessageSettings.DEFAULT_ENABLE
                     )
                     InsetDivider()
-                    InfoRow("适配范围", "微信 8.0.49–8.0.77；媒体消息按发送链路处理")
+                    InfoRow("适配范围", "微信 8.0.49–8.0.78；媒体消息按发送链路处理")
                 }
             }
         }

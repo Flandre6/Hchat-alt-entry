@@ -33,7 +33,7 @@ import de.robv.android.xposed.XposedBridge;
 
 /**
  * DexFinder - 使用 DexKit 定位微信混淆后的类和方法
- * 适配微信 8.0.49 ~ 8.0.77+
+ * 适配微信 8.0.49 ~ 8.0.78+
  */
 public class DexFinder {
 
@@ -2458,7 +2458,7 @@ public class DexFinder {
                     "MicroMsg.ConfigStorage",
                     "shouldProcessEvent db is close :%s");
 
-            // 8.0.77 moved/duplicated the wrapper strings. Prefer a candidate
+            // 8.0.77/8.0.78 moved/duplicated the wrapper strings. Prefer a candidate
             // whose declared methods actually expose mutation-shaped APIs.
             sqliteDbWrapperClass = findDatabaseWrapperClass();
             databaseWrapperRescanned = true;
