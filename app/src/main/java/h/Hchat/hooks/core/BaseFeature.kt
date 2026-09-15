@@ -129,6 +129,6 @@ abstract class BaseFeature : Feature {
 
     /** 兼容旧分支功能实现的诊断日志入口，统一进入 LSPosed 日志。 */
     protected fun logInfo(message: String) {
-        HLog.e("[Hchat:${featureId()}] $message")
+        HLog.i("[Hchat:${featureId()}] $message")
     }
 }

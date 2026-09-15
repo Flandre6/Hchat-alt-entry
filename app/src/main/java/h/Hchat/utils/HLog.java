@@ -20,4 +20,13 @@ public final class HLog {
         }
         XposedBridge.log(new RuntimeException(message, throwable));
     }
+
+    /**
+     * Informational module log. Keep successful hook/install diagnostics out of
+     * LSPosed's error stream while preserving the existing error API above.
+     */
+    public static void i(String message) {
+        if (message == null) return;
+        XposedBridge.log(message);
+    }
 }
