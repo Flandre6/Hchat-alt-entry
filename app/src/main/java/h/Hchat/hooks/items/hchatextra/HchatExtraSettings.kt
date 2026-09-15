@@ -17,6 +17,10 @@ object HchatExtraSettings {
     const val KEY_MESSAGE_DETAILS_TIME_FORMAT = "message_details_time_format"
     const val KEY_MESSAGE_DETAILS_POSITION = "message_details_position"
     const val KEY_MESSAGE_DETAILS_AVATAR_GAP = "message_details_avatar_gap"
+    const val KEY_MESSAGE_DETAILS_BUBBLE_TOP = "message_details_bubble_top"
+    const val KEY_MESSAGE_DETAILS_BUBBLE_BOTTOM = "message_details_bubble_bottom"
+    const val KEY_MESSAGE_DETAILS_BUBBLE_LEFT = "message_details_bubble_left"
+    const val KEY_MESSAGE_DETAILS_BUBBLE_RIGHT = "message_details_bubble_right"
     const val KEY_MESSAGE_DETAILS_LEFT_MARGIN = "message_details_left_margin"
     const val KEY_MESSAGE_DETAILS_RIGHT_MARGIN = "message_details_right_margin"
     const val KEY_MESSAGE_DETAILS_TEXT_SIZE = "message_details_text_size"
@@ -40,6 +44,10 @@ object HchatExtraSettings {
     const val POSITION_AVATAR_BELOW = "avatar_below"
     const val DEFAULT_MESSAGE_DETAILS_POSITION = POSITION_MESSAGE_BOTTOM
     const val DEFAULT_MESSAGE_DETAILS_AVATAR_GAP = 2
+    const val DEFAULT_MESSAGE_DETAILS_BUBBLE_TOP = 0
+    const val DEFAULT_MESSAGE_DETAILS_BUBBLE_BOTTOM = 0
+    const val DEFAULT_MESSAGE_DETAILS_BUBBLE_LEFT = 0
+    const val DEFAULT_MESSAGE_DETAILS_BUBBLE_RIGHT = 0
     const val DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN = 64
     const val DEFAULT_MESSAGE_DETAILS_RIGHT_MARGIN = 64
     const val DEFAULT_MESSAGE_DETAILS_TEXT_SIZE = 10
