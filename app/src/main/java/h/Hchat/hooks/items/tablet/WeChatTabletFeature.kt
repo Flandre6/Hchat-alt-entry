@@ -16,6 +16,7 @@ import org.luckypray.dexkit.query.FindMethod
 import org.luckypray.dexkit.query.matchers.MethodMatcher
 import org.luckypray.dexkit.wrap.DexMethod
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.util.HashSet
 
 class WeChatTabletFeature : BaseFeature() {
@@ -38,7 +39,7 @@ class WeChatTabletFeature : BaseFeature() {
         private const val CHAT_VOICE_STACK = "com.tencent.mm.pluginsdk.ui.chat"
         private const val CACHE_PREFS = "Hchat_wechat_tablet_cache"
         private const val CACHE_KEY = "cache_key"
-        private const val CACHE_PAD_METHOD = "pad_method"
+        private const val CACHE_PAD_METHOD = "pad_method_v2"
         private const val CACHE_LOGIN_BUTTON_METHOD = "login_button_method"
         private val padHookedLoaders = HashSet<String>()
         private val loginButtonHookedLoaders = HashSet<String>()
@@ -58,7 +59,7 @@ class WeChatTabletFeature : BaseFeature() {
             val runtimeKey = cacheKey(context, classLoader)
             val padAlreadyHooked = isPadHooked(classLoader)
             val padMethod = if (padAlreadyHooked) null else {
-                findMethod(context, cache, runtimeKey, dexKit, classLoader, CACHE_PAD_METHOD, "Lenovo TB-9707F")
+                findPadModeMethod(context, cache, runtimeKey, dexKit, classLoader)
             }
             if (!padAlreadyHooked && padMethod == null) {
                 HLog.e("$TAG 安装失败: 未定位平板检测方法")
@@ -202,6 +203,76 @@ class WeChatTabletFeature : BaseFeature() {
             return found
         }
 
+        /**
+         * Locate WeChat's zero-argument pad/foldable capability check.
+         *
+         * Older releases kept the Royole, Tecno and system-property checks in one
+         * method. WeChat 8.0.78 moved the system-property branch into a separate
+         * public static method, so the old multi-string query no longer matches.
+         * Keep the historical Lenovo anchor as the final compatibility fallback.
+         */
+        private fun findPadModeMethod(
+            context: Context,
+            cache: SharedPreferences,
+            runtimeKey: String,
+            dexKit: org.luckypray.dexkit.DexKitBridge,
+            classLoader: ClassLoader
+        ): Method? {
+            loadCachedMethod(cache, runtimeKey, classLoader, CACHE_PAD_METHOD)
+                ?.takeIf(::isPadModeCheckMethod)
+                ?.let { return it }
+
+            val queries = listOf(
+                PadMethodQuery("旧版三设备检测", exact = false, strings = PAD_LEGACY_ANCHORS),
+                PadMethodQuery("8.0.78 折叠屏属性检测", exact = true, strings = PAD_8078_ANCHORS),
+                PadMethodQuery("旧版 Lenovo 检测", exact = false, strings = PAD_LENOVO_ANCHORS)
+            )
+            for (query in queries) {
+                val candidates = runCatching {
+                    dexKit.findMethod(
+                        FindMethod().apply {
+                            searchPackages(PAD_SEARCH_PACKAGE)
+                            matcher(MethodMatcher().apply {
+                                if (query.exact) {
+                                    usingEqStrings(*query.strings)
+                                } else {
+                                    usingStrings(query.strings.toList())
+                                }
+                            })
+                        }
+                    ).mapNotNull { data ->
+                        runCatching { data.getMethodInstance(classLoader) }.getOrNull()
+                    }.filter(::isPadModeCheckMethod)
+                        .distinctBy { it.toGenericString() }
+                }.getOrElse {
+                    HLog.e("$TAG ${query.name}定位失败: ${it.message}", it)
+                    emptyList()
+                }
+                val method = candidates.singleOrNull()
+                if (method != null) {
+                    saveCachedDescriptor(cache, runtimeKey, CACHE_PAD_METHOD, method)
+                    HLog.e("$TAG 平板检测方法已定位[${query.name}]: ${method.toGenericString()}")
+                    return method
+                }
+                if (candidates.size > 1) {
+                    HLog.e("$TAG ${query.name}候选不唯一，已跳过: ${candidates.size}")
+                }
+            }
+
+            cache.edit().putString(CACHE_KEY, runtimeKey).remove(CACHE_PAD_METHOD).apply()
+            HLog.e("$TAG 未命中平板检测方法 pkg=${context.packageName}")
+            return null
+        }
+
+        private fun isPadModeCheckMethod(method: Method): Boolean {
+            val modifiers = method.modifiers
+            return Modifier.isPublic(modifiers) &&
+                Modifier.isStatic(modifiers) &&
+                method.parameterCount == 0 &&
+                (method.returnType == java.lang.Boolean.TYPE ||
+                    method.returnType == java.lang.Boolean::class.java)
+        }
+
         private fun loadCachedMethod(
             cache: SharedPreferences,
             runtimeKey: String,
@@ -274,5 +345,20 @@ class WeChatTabletFeature : BaseFeature() {
             if (isArray) return name.replace('.', '/')
             return "L${name.replace('.', '/')};"
         }
+
+        private data class PadMethodQuery(
+            val name: String,
+            val exact: Boolean,
+            val strings: Array<String>
+        )
+
+        private const val PAD_SEARCH_PACKAGE = "com.tencent.mm.ui"
+        private val PAD_LEGACY_ANCHORS = arrayOf(
+            "royole",
+            "tecno",
+            "ro.os_foldable_screen_support"
+        )
+        private val PAD_8078_ANCHORS = arrayOf("ro.os_foldable_screen_support")
+        private val PAD_LENOVO_ANCHORS = arrayOf("Lenovo TB-9707F")
     }
 }
