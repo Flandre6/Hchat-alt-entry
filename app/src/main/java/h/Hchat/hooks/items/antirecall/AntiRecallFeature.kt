@@ -561,7 +561,16 @@ class AntiRecallFeature : BaseFeature() {
             )
             return
         }
-        val result = localMessages.insertSystemMessageAt(talker, notice, targetCreateTime + 1L)
+        var result = localMessages.insertSystemMessageAt(talker, notice, targetCreateTime + 1L)
+        if (result <= 0L) {
+            // Back-dated rows are rejected by some 8.0.78 message-table paths.
+            // Keep the notice visible even when the exact historical timestamp
+            // cannot be inserted, using WeChat's normal current-time insertion.
+            result = localMessages.insertSystemMessage(talker, notice)
+            if (result > 0L) {
+                h.Hchat.utils.HLog.i("$TAG 已使用当前时间插入撤回提示: talker=$talker newmsgid=$svrId")
+            }
+        }
         if (result <= 0L) {
             h.Hchat.utils.HLog.e("$TAG 插入提示失败: talker=$talker newmsgid=$svrId")
         }

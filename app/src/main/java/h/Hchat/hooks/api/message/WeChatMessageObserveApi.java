@@ -410,6 +410,11 @@ public final class WeChatMessageObserveApi {
     }
 
     public synchronized void install() {
+        // Features may subscribe before the API warm-up task finishes. Make
+        // installation self-healing instead of treating an early null layer as
+        // a permanent failure.
+        if (eventApi != null) eventApi.installAddMsgHook();
+        if (changeApi != null) changeApi.install();
         boolean usePbLayer = eventApi != null && eventApi.isAvailable();
         if (usePbLayer && !pbLayerActive) {
             eventApi.subscribeMessage(this::onMessageReceived);

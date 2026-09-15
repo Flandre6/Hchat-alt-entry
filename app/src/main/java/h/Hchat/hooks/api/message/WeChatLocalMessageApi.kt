@@ -91,14 +91,19 @@ class WeChatLocalMessageApi(
             return 0L
         }
         return runCatching {
+            // Timed notices (anti-recall) are more reliable through the message
+            // model insert path on newer WeChat builds. The system-message helper
+            // can return normally while silently dropping a back-dated row.
+            if (!useWechatCreateTime) {
+                val timed = insertDirectMessage(finder, talker.orEmpty(), content.orEmpty(), createTime)
+                if (timed > 0L) return@runCatching timed
+            }
             insertViaWechatSystemMessageMethod(
                 finder,
                 talker.orEmpty(),
                 content.orEmpty(),
                 if (useWechatCreateTime) null else normalizeCreateTimeMillis(createTime)
-            )?.let {
-                return@runCatching it
-            }
+            )?.let { return@runCatching it }
             val msg = newMessage(finder, talker.orEmpty())
                 ?: throw IllegalStateException("消息对象创建失败")
             fillSystemMessage(msg, talker.orEmpty(), content.orEmpty(), createTime, useWechatCreateTime)
@@ -107,6 +112,13 @@ class WeChatLocalMessageApi(
         }.onFailure {
             log("插入系统消息失败: ${it.message}")
         }.getOrDefault(0L)
+    }
+
+    private fun insertDirectMessage(finder: DexFinder, talker: String, content: String, createTime: Long): Long {
+        val msg = newMessage(finder, talker) ?: return 0L
+        fillSystemMessage(msg, talker, content, createTime, false)
+        val result = KavaReflector.invoke(finder.localMessageInsertMethod, null, msg)
+        return (result as? Number)?.toLong() ?: 0L
     }
 
     private fun insertViaWechatSystemMessageMethod(
