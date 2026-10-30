@@ -14,6 +14,8 @@ const resolver = finder.slice(
 );
 assert.match(resolver, /new String\[\]\s*\{\s*"addSightObjectByPath"\s*,\s*"produceSightByPath"\s*\}/);
 assert.match(resolver, /LinkedHashSet<Method> candidates/);
+assert.match(resolver, /anchorsComplete/);
+assert.match(resolver, /!anchorsComplete \|\| candidates\.size\(\) != 1/);
 assert.match(resolver, /candidates\.size\(\) != 1/);
 assert.match(args, /method\.getDeclaringClass\(\) != helperClass/);
 assert.match(args, /method\.getReturnType\(\) != boolean\.class/);
@@ -27,5 +29,8 @@ assert.notEqual(cacheRestoreStart, -1);
 assert.notEqual(cacheRestoreEnd, -1);
 const cacheRestore = finder.slice(cacheRestoreStart, cacheRestoreEnd);
 assert.match(cacheRestore, /snsAddVideoMethod = loadMethod\("snsAddVideoMethod"\)[\s\S]*?!isSnsAddVideoMethod\(snsUploadPackHelperClass, snsAddVideoMethod\)[\s\S]*?snsAddVideoMethod = null;[\s\S]*?cacheDescriptorInvalid = true;/);
+assert.match(finder, /SNS_VIDEO_LOCATOR_VERSION_KEY\s*=\s*"sns\.video\.locator\.version"/);
+assert.match(cacheRestore, /!snsVideoLocatorVersionCurrent[\s\S]*?snsAddVideoMethod = findSnsAddVideoMethod\(snsUploadPackHelperClass\)[\s\S]*?if \(!snsVideoLocatorResolved\)[\s\S]*?putMethod\(videoLocatorEditor, "snsAddVideoMethod", snsAddVideoMethod\)[\s\S]*?putString\([\s\S]*?SNS_VIDEO_LOCATOR_VERSION_KEY/);
+assert.match(finder, /putMethod\(editor, "snsAddVideoMethod", snsAddVideoMethod\);\s*editor\.putString\(SNS_VIDEO_LOCATOR_VERSION_KEY,[\s\S]*?snsVideoLocatorResolved \? SNS_VIDEO_LOCATOR_VERSION : ""/);
 
-console.log('PASS: four/five-String compatibility, anchored unique candidate, call argument adaptation, and cache signature rejection');
+console.log('PASS: four/five-String compatibility, complete anchored uniqueness, argument adaptation, and cache signature/migration handling');
