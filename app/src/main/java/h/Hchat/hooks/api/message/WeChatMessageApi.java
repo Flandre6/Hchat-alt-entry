@@ -16,7 +16,6 @@ import h.Hchat.hooks.api.model.WeChatContact;
 import h.Hchat.hooks.api.model.WeChatMessage;
 import h.Hchat.hooks.api.model.WeChatQuoteMsg;
 import h.Hchat.hooks.api.net.WeChatNetworkDispatcher;
-import h.Hchat.hooks.items.payment.detect.RedPacketReflector;
 import h.Hchat.utils.KavaReflector;
 
 import java.lang.reflect.Constructor;
@@ -187,7 +186,8 @@ public final class WeChatMessageApi {
     public boolean isAvailable() {
         return dexFinder != null
                 && dexFinder.sendTextMsgClass != null
-                && (dexFinder.sendTextMsgCtorLong != null || dexFinder.sendTextMsgCtorObject != null)
+                && (SendTextRequestArguments.isSupported(dexFinder.sendTextMsgCtorLong)
+                || SendTextRequestArguments.isSupported(dexFinder.sendTextMsgCtorObject))
                 && networkDispatcher != null;
     }
 
@@ -695,7 +695,7 @@ public final class WeChatMessageApi {
     }
 
     public boolean canSendAt() {
-        return isAvailable() && dexFinder.sendTextMsgCtorObject != null;
+        return isAvailable() && SendTextRequestArguments.isSupported(dexFinder.sendTextMsgCtorObject);
     }
 
     public boolean canSendXml() {
@@ -787,33 +787,14 @@ public final class WeChatMessageApi {
                                      int messageType,
                                      int sendFlag,
                                      Object sourceArgs) throws Throwable {
-        if (sourceArgs != null) {
-            Constructor<?> objectCtor = dexFinder.sendTextMsgCtorObject;
-            if (objectCtor != null) {
-                return KavaReflector.newInstance(objectCtor, talker, content, messageType, sendFlag, sourceArgs);
-            }
-        }
-
-        Constructor<?> longCtor = dexFinder.sendTextMsgCtorLong;
-        if (longCtor != null) {
-            return KavaReflector.newInstance(longCtor, talker, content, messageType, sendFlag, 0L);
-        }
-
-        Constructor<?> objectCtor = dexFinder.sendTextMsgCtorObject;
-        if (objectCtor != null) {
-            return KavaReflector.newInstance(objectCtor, talker, content, messageType, sendFlag, sourceArgs);
-        }
-
-        return RedPacketReflector.newInstanceByArgs(
-                dexFinder.sendTextMsgClass,
-                new Object[]{
-                        talker,
-                        content,
-                        messageType,
-                        sendFlag,
-                        sourceArgs != null ? sourceArgs : 0L
-                }
-        );
+        Constructor<?> constructor = sourceArgs != null
+                ? dexFinder.sendTextMsgCtorObject
+                : dexFinder.sendTextMsgCtorLong != null
+                    ? dexFinder.sendTextMsgCtorLong : dexFinder.sendTextMsgCtorObject;
+        Object[] arguments = SendTextRequestArguments.create(
+                constructor, talker, content, messageType, sendFlag, sourceArgs);
+        if (arguments == null) throw new IllegalStateException("无语义匹配的文本请求构造器");
+        return KavaReflector.newInstance(constructor, arguments);
     }
 
     private Object getPatExtensionInstance() {

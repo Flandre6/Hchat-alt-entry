@@ -182,6 +182,7 @@ boolean custom = WeChatApis.message().sender().sendTextWithAtList(
 实现证据：
 
 - `NetSceneSendMsg(String, String, int, int, Object)` 在 `flag & 1` 且 `Object instanceof HashMap` 时把 `HashMap` 合并进 `<msgsource>`。
+- 官方微信 8.0.80 的文本请求构造器在 `sourceArgs` 后增加 `String msgSource`；普通文本请求的调用点将该尾参设为 `null`。实现保留旧五参构造器，并按精确参数类型匹配五参或六参签名。
 - 微信 `ChatFooter/AtSomeOneHelper` 在 8.0.49、8.0.58、8.0.72、8.0.74 中均生成 `atuserlist -> <![CDATA[wxid1,wxid2]]>`。
 - 文本显示格式使用 `@显示名\u2005`，其中 `\u2005` 是微信自己用于 @ 后分隔的空白字符。
 - @ 全体使用 `notify@all` 作为 `atuserlist` 值；是否具备 @ 全体权限由微信自身处理。

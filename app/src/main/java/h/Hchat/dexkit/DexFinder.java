@@ -43,6 +43,8 @@ public class DexFinder {
     private static final String CACHE_KEY = "cache.key";
     private static final String CACHE_SNAPSHOT_VERSION_KEY = "cache.snapshot.version";
     private static final String CACHE_SNAPSHOT_VERSION = "2";
+    private static final String SEND_TEXT_LOCATOR_VERSION_KEY = "send.text.locator.version";
+    private static final String SEND_TEXT_LOCATOR_VERSION = "1";
     private static final String LOCATOR_WISH_COMPLETE = "locator.wish.complete";
     private static final String LOCATOR_PACKET_COMPLETE = "locator.packet.complete";
     private static final String LOCATOR_ECS_COMPLETE = "locator.ecs.complete";
@@ -288,6 +290,10 @@ public class DexFinder {
         networkQueueLocatorResolved = false;
         if (loadCache()) {
             resolvedAll = true;
+            if (!isSendTextLocatorCacheCurrent()) {
+                resolveSendTextMsg();
+                saveCache();
+            }
             logDetail("命中缓存: " + shortKey(runtimeCacheKey));
             return;
         }
@@ -688,7 +694,13 @@ public class DexFinder {
     }
 
     public void resolveSendTextMsg() {
-        if (ensureSnapshotLoaded()) return;
+        boolean snapshotLoaded = ensureSnapshotLoaded();
+        if (snapshotLoaded && isSendTextLocatorCacheCurrent()) return;
+        if (snapshotLoaded) {
+            sendTextMsgClass = null;
+            sendTextMsgCtorLong = null;
+            sendTextMsgCtorObject = null;
+        }
         try {
             if (sendTextMsgClass != null
                     && (sendTextMsgCtorLong != null || sendTextMsgCtorObject != null)) {
@@ -711,10 +723,8 @@ public class DexFinder {
                     });
 
             for (Class<?> cl : candidates) {
-                Constructor<?> longCtor = findCtorByExactTypes(
-                        cl, String.class, String.class, int.class, int.class, long.class);
-                Constructor<?> objectCtor = findCtorByExactTypes(
-                        cl, String.class, String.class, int.class, int.class, Object.class);
+                Constructor<?> longCtor = findSendTextConstructor(cl, long.class);
+                Constructor<?> objectCtor = findSendTextConstructor(cl, Object.class);
                 if (longCtor != null || objectCtor != null) {
                     sendTextMsgClass = cl;
                     sendTextMsgCtorLong = longCtor;
@@ -730,6 +740,21 @@ public class DexFinder {
         } catch (Throwable e) {
             h.Hchat.utils.HLog.e(TAG + " resolveSendText 失败: " + e.getMessage(), e);
         }
+    }
+
+    private Constructor<?> findSendTextConstructor(Class<?> owner, Class<?> sourceArgsType) {
+        if (owner == null || (sourceArgsType != long.class && sourceArgsType != Object.class)) return null;
+        Constructor<?> six = findCtorByExactTypes(owner, String.class, String.class,
+                int.class, int.class, sourceArgsType, String.class);
+        if (six != null) return six;
+        return findCtorByExactTypes(owner, String.class, String.class,
+                int.class, int.class, sourceArgsType);
+    }
+
+    private boolean isSendTextLocatorCacheCurrent() {
+        return cachePrefs != null
+                && SEND_TEXT_LOCATOR_VERSION.equals(
+                cachePrefs.getString(SEND_TEXT_LOCATOR_VERSION_KEY, ""));
     }
 
     public void resolveGetContactServiceApi() {
@@ -3654,10 +3679,8 @@ public class DexFinder {
             unionOpenCtor10 = findCtorByArgCount(openLuckyMoneyUnionClass, 10);
             unionOpenCtor9 = findCtorByArgCount(openLuckyMoneyUnionClass, 9);
             wishWxHbCtor = findCtorByArgCount(wishWxHbClass, 4);
-            sendTextMsgCtorLong = findCtorByExactTypes(
-                    sendTextMsgClass, String.class, String.class, int.class, int.class, long.class);
-            sendTextMsgCtorObject = findCtorByExactTypes(
-                    sendTextMsgClass, String.class, String.class, int.class, int.class, Object.class);
+            sendTextMsgCtorLong = findSendTextConstructor(sendTextMsgClass, long.class);
+            sendTextMsgCtorObject = findSendTextConstructor(sendTextMsgClass, Object.class);
             if (localMessageClass == null && localMessageInsertMethod != null
                     && localMessageInsertMethod.getParameterTypes().length == 1) {
                 localMessageClass = localMessageInsertMethod.getParameterTypes()[0];
@@ -4783,6 +4806,7 @@ public class DexFinder {
             putClass(editor, "ecsGiftMsgClass", ecsGiftMsgClass);
             putMethodList(editor, "msgDescTextMethods", msgDescTextMethods);
             putClass(editor, "sendTextMsgClass", sendTextMsgClass);
+            editor.putString(SEND_TEXT_LOCATOR_VERSION_KEY, SEND_TEXT_LOCATOR_VERSION);
             putMethod(editor, "serviceGetterMethod", serviceGetterMethod);
             putMethodList(editor, "getContactAddMethods", getContactAddMethods);
             putMethodList(editor, "getContactServiceGetters", getContactServiceGetters);
