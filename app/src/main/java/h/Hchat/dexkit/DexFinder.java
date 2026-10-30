@@ -45,6 +45,7 @@ public class DexFinder {
     private static final String CACHE_SNAPSHOT_VERSION = "2";
     private static final String SEND_TEXT_LOCATOR_VERSION_KEY = "send.text.locator.version";
     private static final String SEND_TEXT_LOCATOR_VERSION = "1";
+    private static final String CACHE_SEND_TEXT_LOCATOR_RESOLVED = "locator.send.text.resolved";
     private static final String LOCATOR_WISH_COMPLETE = "locator.wish.complete";
     private static final String LOCATOR_PACKET_COMPLETE = "locator.packet.complete";
     private static final String LOCATOR_ECS_COMPLETE = "locator.ecs.complete";
@@ -266,6 +267,7 @@ public class DexFinder {
     private boolean ecsGiftLocatorResolved;
     private boolean msgDescLocatorResolved;
     private boolean protobufLocatorResolved;
+    private boolean sendTextMsgLocatorResolved;
 
     public DexFinder(DexKitBridge dexKit, ClassLoader classLoader) {
         this(dexKit, classLoader, null);
@@ -695,18 +697,14 @@ public class DexFinder {
 
     public void resolveSendTextMsg() {
         boolean snapshotLoaded = ensureSnapshotLoaded();
-        if (snapshotLoaded && isSendTextLocatorCacheCurrent()) return;
-        if (snapshotLoaded) {
-            sendTextMsgClass = null;
-            sendTextMsgCtorLong = null;
-            sendTextMsgCtorObject = null;
+        if (snapshotLoaded && isSendTextLocatorCacheCurrent()) {
+            sendTextMsgLocatorResolved = true;
+            return;
         }
+        if (snapshotLoaded) sendTextMsgLocatorResolved = false;
+        if (sendTextMsgLocatorResolved && isSendTextRequestApiValid()) return;
+        sendTextMsgLocatorResolved = false;
         try {
-            if (sendTextMsgClass != null
-                    && (sendTextMsgCtorLong != null || sendTextMsgCtorObject != null)) {
-                return;
-            }
-
             List<Class<?>> candidates = new ArrayList<>();
             collectSendTextClassCandidates(candidates, 20,
                     new String[][]{
@@ -729,6 +727,7 @@ public class DexFinder {
                     sendTextMsgClass = cl;
                     sendTextMsgCtorLong = longCtor;
                     sendTextMsgCtorObject = objectCtor;
+                    sendTextMsgLocatorResolved = isSendTextRequestApiValid();
                     break;
                 }
             }
@@ -754,7 +753,28 @@ public class DexFinder {
     private boolean isSendTextLocatorCacheCurrent() {
         return cachePrefs != null
                 && SEND_TEXT_LOCATOR_VERSION.equals(
-                cachePrefs.getString(SEND_TEXT_LOCATOR_VERSION_KEY, ""));
+                cachePrefs.getString(SEND_TEXT_LOCATOR_VERSION_KEY, ""))
+                && cachePrefs.getBoolean(CACHE_SEND_TEXT_LOCATOR_RESOLVED, false)
+                && isSendTextRequestApiValid();
+    }
+
+    private boolean isSendTextRequestApiValid() {
+        return sendTextMsgClass != null
+                && ((sendTextMsgCtorLong != null
+                && sendTextMsgCtorLong.equals(findSendTextConstructor(sendTextMsgClass, long.class)))
+                || (sendTextMsgCtorObject != null
+                && sendTextMsgCtorObject.equals(findSendTextConstructor(sendTextMsgClass, Object.class))));
+    }
+
+    private void restoreSendTextLocatorCacheState() {
+        sendTextMsgLocatorResolved = isSendTextLocatorCacheCurrent();
+    }
+
+    private void saveSendTextLocatorCache(SharedPreferences.Editor editor) {
+        boolean resolved = sendTextMsgLocatorResolved && isSendTextRequestApiValid();
+        editor.putBoolean(CACHE_SEND_TEXT_LOCATOR_RESOLVED, resolved);
+        editor.putString(SEND_TEXT_LOCATOR_VERSION_KEY,
+                resolved ? SEND_TEXT_LOCATOR_VERSION : "");
     }
 
     public void resolveGetContactServiceApi() {
@@ -3681,6 +3701,7 @@ public class DexFinder {
             wishWxHbCtor = findCtorByArgCount(wishWxHbClass, 4);
             sendTextMsgCtorLong = findSendTextConstructor(sendTextMsgClass, long.class);
             sendTextMsgCtorObject = findSendTextConstructor(sendTextMsgClass, Object.class);
+            restoreSendTextLocatorCacheState();
             if (localMessageClass == null && localMessageInsertMethod != null
                     && localMessageInsertMethod.getParameterTypes().length == 1) {
                 localMessageClass = localMessageInsertMethod.getParameterTypes()[0];
@@ -4806,7 +4827,7 @@ public class DexFinder {
             putClass(editor, "ecsGiftMsgClass", ecsGiftMsgClass);
             putMethodList(editor, "msgDescTextMethods", msgDescTextMethods);
             putClass(editor, "sendTextMsgClass", sendTextMsgClass);
-            editor.putString(SEND_TEXT_LOCATOR_VERSION_KEY, SEND_TEXT_LOCATOR_VERSION);
+            saveSendTextLocatorCache(editor);
             putMethod(editor, "serviceGetterMethod", serviceGetterMethod);
             putMethodList(editor, "getContactAddMethods", getContactAddMethods);
             putMethodList(editor, "getContactServiceGetters", getContactServiceGetters);

@@ -3,7 +3,9 @@ package h.Hchat.hooks.api.message;
 import h.Hchat.dexkit.SendTextFinderFixture;
 import h.Hchat.dexkit.SendTextRestoreFixture;
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public final class SendTextRequestArgumentsRegression {
     public static final class FiveOnly {
@@ -27,12 +29,22 @@ public final class SendTextRequestArgumentsRegression {
         public InvalidShapes(String talker, String content, int type, int flag, Object source, String msgSource, int extra) {}
     }
 
+    private static final List<String> failures = new ArrayList<>();
+
     public static void main(String[] args) throws Exception {
-        verifiesLocatorAcceptsFiveAndSixAndPrefersSix();
-        verifiesExactParameterOrderAndRejectedSignatures();
-        verifiesArgumentValuesAndMsgSourceTail();
-        verifiesLocatorCacheVersionAndRestorePath();
-        System.out.println("PASS text request compatibility assertions");
+        run("locator accepts five and six and prefers six", SendTextRequestArgumentsRegression::verifiesLocatorAcceptsFiveAndSixAndPrefersSix);
+        run("exact parameter order and invalid signatures", SendTextRequestArgumentsRegression::verifiesExactParameterOrderAndRejectedSignatures);
+        run("argument values and msgSource tail", SendTextRequestArgumentsRegression::verifiesArgumentValuesAndMsgSourceTail);
+        run("cold miss does not complete cache", SendTextRequestArgumentsRegression::failedLookupDoesNotMarkCacheResolved);
+        run("current version without constructor is invalid", SendTextRequestArgumentsRegression::currentVersionWithoutConstructorIsRejected);
+        run("failed stale restore preserves constructor and can retry", SendTextRequestArgumentsRegression::failedStaleRestorePreservesAndRetries);
+        run("restored valid cache is reused", SendTextRequestArgumentsRegression::validCacheIsReused);
+        run("unrelated cached values survive text-state writes", SendTextRequestArgumentsRegression::unrelatedCacheItemIsPreserved);
+        if (!failures.isEmpty()) {
+            for (String failure : failures) System.err.println("FAIL " + failure);
+            throw new AssertionError(failures.size() + " regression assertion(s) failed");
+        }
+        System.out.println("PASS text request compatibility and locator cache assertions");
     }
 
     private static void verifiesLocatorAcceptsFiveAndSixAndPrefersSix() throws Exception {
@@ -89,23 +101,93 @@ public final class SendTextRequestArgumentsRegression {
                 "long source overload rejects non-null sourceArgs");
     }
 
-    private static void verifiesLocatorCacheVersionAndRestorePath() {
-        SendTextRestoreFixture legacy = new SendTextRestoreFixture("");
-        legacy.restoreCachedSnapshot();
-        equal(1, legacy.textResolutionCount(), "legacy snapshot re-runs text locator");
-        equal(1, legacy.saveCount(), "legacy snapshot saves upgraded locator result");
-        equal(SendTextRestoreFixture.CURRENT_VERSION, legacy.savedVersion(),
-                "restored snapshot stores current locator version");
+    private static void failedLookupDoesNotMarkCacheResolved() {
+        SendTextRestoreFixture fixture = new SendTextRestoreFixture("");
+        fixture.setSnapshotLoaded(false);
+        fixture.locate();
+        fixture.saveTextState();
+        check(!fixture.savedResolved(), "a miss persists resolved=false");
+        check(!fixture.cacheCurrent(), "a miss cannot make the text locator current");
 
-        SendTextRestoreFixture previous = new SendTextRestoreFixture("0");
-        previous.restoreCachedSnapshot();
-        equal(1, previous.textResolutionCount(), "previous locator version re-runs text locator");
+        fixture.nextCandidates(SixOnly.class);
+        fixture.locate();
+        fixture.saveTextState();
+        equal(2, fixture.lookupCount(), "failed lookup is retried only on the next explicit locate");
+        check(fixture.locatorResolved(), "successful retry marks the locator resolved");
+        check(fixture.savedResolved(), "successful retry persists resolved=true");
+        check(fixture.cacheCurrent(), "successful retry makes the structurally valid cache current");
+    }
 
-        SendTextRestoreFixture current = new SendTextRestoreFixture(
-                SendTextRestoreFixture.CURRENT_VERSION);
-        current.restoreCachedSnapshot();
-        equal(0, current.textResolutionCount(), "current locator version reuses cached result");
-        equal(0, current.saveCount(), "current locator cache is not rewritten");
+    private static void currentVersionWithoutConstructorIsRejected() {
+        SendTextRestoreFixture fixture = new SendTextRestoreFixture(SendTextRestoreFixture.CURRENT_VERSION);
+        fixture.seedCache(SendTextRestoreFixture.CURRENT_VERSION, true);
+        fixture.setSnapshotLoaded(true);
+        fixture.restoreState();
+        check(!fixture.locatorResolved(), "cache restoration rejects a missing constructor");
+        check(!fixture.cacheCurrent(), "version plus resolved marker cannot replace structural validation");
+        fixture.locate();
+        equal(1, fixture.lookupCount(), "invalid current marker triggers one targeted lookup");
+        check(!fixture.locatorResolved(), "failed targeted lookup stays unresolved in memory");
+        fixture.saveTextState();
+        check(!fixture.savedResolved(), "failed targeted lookup persists unresolved state");
+    }
+
+    private static void failedStaleRestorePreservesAndRetries() throws Exception {
+        SendTextRestoreFixture fixture = new SendTextRestoreFixture("0");
+        fixture.seedCache("0", true);
+        fixture.installRestoredClass(FiveOnly.class);
+        Constructor<?> original = fixture.longConstructor();
+        fixture.setSnapshotLoaded(true);
+        fixture.restoreState();
+        fixture.locate();
+        record(FiveOnly.class.equals(fixture.textClass()),
+                "failed stale lookup retains the same-runtime five-arg owner");
+        record(original != null && original.equals(fixture.longConstructor()),
+                "failed stale lookup retains the valid constructor");
+        record(!fixture.locatorResolved(), "failed stale lookup remains eligible for explicit retry");
+        record(!fixture.cacheCurrent(), "stale result is not falsely marked current");
+        fixture.saveTextState();
+        fixture.restoreState();
+        record(!fixture.locatorResolved(), "failed stale result restores as unresolved");
+
+        fixture.nextCandidates(BothShapes.class);
+        fixture.locate();
+        record(fixture.lookupCount() == 2,
+                "failed stale restore is queried again on the next explicit locate");
+        record(BothShapes.class.equals(fixture.textClass()), "successful retry adopts the newer candidate");
+        record(fixture.longConstructor() != null && fixture.longConstructor().getParameterCount() == 6,
+                "new six-arg overload outranks legacy five-arg");
+        fixture.saveTextState();
+        record(fixture.cacheCurrent(), "successful retry persists a valid current descriptor");
+    }
+
+    private static void validCacheIsReused() {
+        SendTextRestoreFixture fixture = new SendTextRestoreFixture(SendTextRestoreFixture.CURRENT_VERSION);
+        fixture.seedCache(SendTextRestoreFixture.CURRENT_VERSION, true);
+        fixture.installRestoredClass(FiveOnly.class);
+        fixture.setSnapshotLoaded(true);
+        fixture.restoreState();
+        check(fixture.locatorResolved(), "valid legacy five-arg descriptor restores as complete");
+        check(fixture.cacheCurrent(), "valid current five-arg cache is accepted");
+        fixture.locate();
+        equal(0, fixture.lookupCount(), "valid cache is reused without a targeted query");
+    }
+
+    private static void unrelatedCacheItemIsPreserved() {
+        SendTextRestoreFixture fixture = new SendTextRestoreFixture("");
+        fixture.seedOtherCacheItem("keep");
+        fixture.saveTextState();
+        equal("keep", fixture.otherCacheItem(), "text-state persistence leaves unrelated cache items alone");
+    }
+
+    private interface CheckedAction { void run() throws Exception; }
+
+    private static void run(String name, CheckedAction action) {
+        try {
+            action.run();
+        } catch (Throwable error) {
+            failures.add(name + ": " + error.getMessage());
+        }
     }
 
     private static Object[] create(Constructor<?> constructor, Object sourceArgs) {
@@ -127,5 +209,9 @@ public final class SendTextRequestArgumentsRegression {
 
     private static void check(boolean value, String label) {
         if (!value) throw new AssertionError(label);
+    }
+
+    private static void record(boolean value, String label) {
+        if (!value) failures.add(label);
     }
 }
