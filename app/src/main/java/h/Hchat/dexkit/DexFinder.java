@@ -26,6 +26,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -3738,6 +3739,11 @@ public class DexFinder {
             snsSetSdkAppNameMethod = loadMethod("snsSetSdkAppNameMethod");
             snsAddImageMethod = loadMethod("snsAddImageMethod");
             snsAddVideoMethod = loadMethod("snsAddVideoMethod");
+            if (snsAddVideoMethod != null
+                    && !isSnsAddVideoMethod(snsUploadPackHelperClass, snsAddVideoMethod)) {
+                snsAddVideoMethod = null;
+                cacheDescriptorInvalid = true;
+            }
             snsCommitMethod = loadMethod("snsCommitMethod");
             snsShareAppMsgMethod = loadMethod("snsShareAppMsgMethod");
             snsUploadCheckMethod = loadMethod("snsUploadCheckMethod");
@@ -4596,45 +4602,27 @@ public class DexFinder {
 
     private Method findSnsAddVideoMethod(Class<?> helperClass) {
         if (helperClass == null) return null;
-        try {
-            List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("addSightObjectByPath"));
-            for (MethodData methodData : methods) {
-                try {
-                    Method method = methodData.getMethodInstance(classLoader);
-                    if (method.getDeclaringClass() != helperClass) continue;
-                    if (method.getReturnType() != boolean.class) continue;
-                    Class<?>[] params = method.getParameterTypes();
-                    if (params.length == 4
-                            && params[0] == String.class
-                            && params[1] == String.class
-                            && params[2] == String.class
-                            && params[3] == String.class) {
-                        return KavaReflector.accessible(method);
-                    }
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-        try {
-            List<MethodData> methods = dexKit.findMethod(
-                    mkMethodUsingStrings("produceSightByPath"));
-            for (MethodData methodData : methods) {
-                try {
-                    Method method = methodData.getMethodInstance(classLoader);
-                    if (method.getDeclaringClass() != helperClass) continue;
-                    if (method.getReturnType() != boolean.class) continue;
-                    Class<?>[] params = method.getParameterTypes();
-                    if (params.length == 4
-                            && params[0] == String.class
-                            && params[1] == String.class
-                            && params[2] == String.class
-                            && params[3] == String.class) {
-                        return KavaReflector.accessible(method);
-                    }
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-        return null;
+        LinkedHashSet<Method> candidates = new LinkedHashSet<>();
+        for (String anchor : new String[]{"addSightObjectByPath", "produceSightByPath"}) {
+            try {
+                for (MethodData data : dexKit.findMethod(mkMethodUsingStrings(anchor))) {
+                    try {
+                        Method method = data.getMethodInstance(classLoader);
+                        if (isSnsAddVideoMethod(helperClass, method)) candidates.add(method);
+                    } catch (Throwable ignored) {}
+                }
+            } catch (Throwable ignored) {}
+        }
+        if (candidates.size() != 1) {
+            logDetail("朋友圈视频helper定位拒绝: uniqueAnchoredCandidates=" + candidates.size());
+            return null;
+        }
+        return KavaReflector.accessible(candidates.iterator().next());
+    }
+
+    private boolean isSnsAddVideoMethod(Class<?> helperClass, Method method) {
+        return h.Hchat.hooks.api.sns.SnsVideoRequestArguments
+                .isCompatibleMethod(helperClass, method);
     }
 
     private Method findSnsCommitMethod(Class<?> helperClass) {
