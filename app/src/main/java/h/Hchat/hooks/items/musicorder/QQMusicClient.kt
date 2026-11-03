@@ -62,20 +62,23 @@ internal class QQMusicClient {
                 })
             }
             val encoded = URLEncoder.encode(request.toString(), Charsets.UTF_8.name())
-            parseSearchFirstSong(get("$MUSICU_URL?data=$encoded", headers))
+            parseSearchSong(get("$MUSICU_URL?data=$encoded", headers), keyword)
         }.getOrNull()?.let { return it }
         return searchBySmartbox(keyword, headers)
     }
 
-    private fun parseSearchFirstSong(response: String?): JSONObject? {
+    private fun parseSearchSong(response: String?, keyword: String): JSONObject? {
         if (response.isNullOrBlank()) return null
         val root = JSONObject(response)
         val search = root.optJSONObject("req") ?: root.optJSONObject("searchMusic") ?: return null
-        return search.optJSONObject("data")
+        val songs = search.optJSONObject("data")
             ?.optJSONObject("body")
             ?.optJSONObject("song")
             ?.optJSONArray("list")
-            ?.optJSONObject(0)
+            ?: return null
+        val candidates = (0 until songs.length()).mapNotNull { songs.optJSONObject(it) }
+        val index = QQMusicSongMatcher.selectIndex(keyword, candidates.map { it.songTitle() })
+        return candidates.getOrNull(index)
     }
 
     private fun searchBySmartbox(keyword: String, headers: Map<String, String>): JSONObject? {
@@ -85,13 +88,14 @@ internal class QQMusicClient {
                 "https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?format=json&inCharset=utf8&outCharset=utf-8&key=$encoded",
                 headers
             ) ?: return@runCatching null
-            val mid = JSONObject(response)
+            val songs = JSONObject(response)
                 .optJSONObject("data")
                 ?.optJSONObject("song")
                 ?.optJSONArray("itemlist")
-                ?.optJSONObject(0)
-                ?.optString("mid")
-                .orEmpty()
+                ?: return@runCatching null
+            val candidates = (0 until songs.length()).mapNotNull { songs.optJSONObject(it) }
+            val index = QQMusicSongMatcher.selectIndex(keyword, candidates.map { it.songTitle() })
+            val mid = candidates.getOrNull(index)?.optString("mid").orEmpty()
             if (mid.isBlank()) return@runCatching null
             val detailRequest = JSONObject().apply {
                 put("comm", JSONObject().put("ct", "19").put("cv", "1882"))
@@ -109,6 +113,11 @@ internal class QQMusicClient {
                 ?.optJSONObject("track_info")
         }.getOrNull()
     }
+
+    private fun JSONObject.songTitle(): String = sequenceOf("name", "title", "songname", "song_name")
+        .map { optString(it).trim() }
+        .firstOrNull { it.isNotEmpty() }
+        .orEmpty()
 
     private fun requestLyric(mid: String): String {
         return runCatching {
