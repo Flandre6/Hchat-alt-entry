@@ -3842,7 +3842,7 @@ internal fun featureSubSearchTerms(featureId: String): List<String> {
         TypingReportBlockFeature.ID -> listOf("拦截正在输入上报", "屏蔽正在输入", "正在输入", "输入状态", "输入上报")
         PatBlockFeature.ID -> listOf("禁止拍一拍", "屏蔽拍一拍", "双击头像", "头像双击")
         MessageDetailsSettingsProvider.FEATURE_ID -> listOf(
-            "消息显示时间", "消息显示详情", "消息详情", "消息时间", "消息类型", "时间格式", "时间颜色", "显示位置", "点击显详情"
+            "消息显示时间", "消息显示详情", "消息详情", "消息时间", "消息类型", "时间格式", "时间颜色", "间距", "字体大小"
         )
         GroupMemberHistorySettingsProvider.FEATURE_ID -> listOf("历史发言记录", "群成员历史发言", "群成员资料")
         AtAllNotificationBlockFeature.ID -> listOf("屏蔽艾特所有人", "屏蔽@所有人", "艾特全体", "通知拦截")
@@ -9191,6 +9191,38 @@ internal fun MessageDetailsConfigPage(
             )
         )
     }
+    var marginLeft by remember {
+        mutableStateOf(
+            sp.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_LEFT,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_HORIZONTAL
+            ).toString()
+        )
+    }
+    var marginTop by remember {
+        mutableStateOf(
+            sp.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_TOP,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_VERTICAL
+            ).toString()
+        )
+    }
+    var marginRight by remember {
+        mutableStateOf(
+            sp.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_RIGHT,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_HORIZONTAL
+            ).toString()
+        )
+    }
+    var marginBottom by remember {
+        mutableStateOf(
+            sp.getInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_BOTTOM,
+                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_VERTICAL
+            ).toString()
+        )
+    }
     var lightBg by remember {
         mutableStateOf(
             sp.getString(
@@ -9239,52 +9271,12 @@ internal fun MessageDetailsConfigPage(
             ).orEmpty()
         )
     }
-    var position by remember {
-        mutableStateOf(
-            sp.getString(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
-            ).orEmpty().ifBlank { HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION }
-        )
-    }
-    var avatarGap by remember {
-        mutableStateOf(
-            sp.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP
-            ).toString()
-        )
-    }
-    var leftMargin by remember {
-        mutableStateOf(
-            sp.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN
-            ).toString()
-        )
-    }
-    var rightMargin by remember {
-        mutableStateOf(
-            sp.getInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_RIGHT_MARGIN,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_RIGHT_MARGIN
-            ).toString()
-        )
-    }
     var textSize by remember {
         mutableStateOf(
             sp.getInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_TEXT_SIZE,
                 HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TEXT_SIZE
             ).toString()
-        )
-    }
-    var clickShow by remember {
-        mutableStateOf(
-            sp.getBoolean(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_CLICK_SHOW,
-                HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_CLICK_SHOW
-            )
         )
     }
     var formatContent by remember {
@@ -9298,18 +9290,17 @@ internal fun MessageDetailsConfigPage(
 
     fun resetValues() {
         enabled = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS
+        marginLeft = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_HORIZONTAL.toString()
+        marginTop = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_VERTICAL.toString()
+        marginRight = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_HORIZONTAL.toString()
+        marginBottom = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_VERTICAL.toString()
         lightBg = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LIGHT_BG
         lightText = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LIGHT_TEXT
         darkBg = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_DARK_BG
         darkText = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_DARK_TEXT
         format = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_FORMAT
         timeFormat = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TIME_FORMAT
-        position = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
-        avatarGap = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP.toString()
-        leftMargin = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN.toString()
-        rightMargin = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_RIGHT_MARGIN.toString()
         textSize = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TEXT_SIZE.toString()
-        clickShow = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_CLICK_SHOW
         formatContent = HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_FORMAT_CONTENT
     }
 
@@ -9318,41 +9309,56 @@ internal fun MessageDetailsConfigPage(
         val savedLightText = cleanMessageDetailsColor(lightText, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LIGHT_TEXT)
         val savedDarkBg = cleanMessageDetailsColor(darkBg, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_DARK_BG)
         val savedDarkText = cleanMessageDetailsColor(darkText, HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_DARK_TEXT)
-        val savedPosition = position.takeIf { it in messageDetailsPositionValues() }
-            ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_POSITION
-        val savedAvatarGap = (avatarGap.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_AVATAR_GAP)
-            .coerceIn(0, 64)
         sp.edit()
             .putBoolean(HchatExtraSettings.KEY_MESSAGE_DETAILS, enabled)
+            .putInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_LEFT,
+                marginLeft.toIntOrNull()?.coerceIn(
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MIN,
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MAX
+                ) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_HORIZONTAL
+            )
+            .putInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_TOP,
+                marginTop.toIntOrNull()?.coerceIn(
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MIN,
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MAX
+                ) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_VERTICAL
+            )
+            .putInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_RIGHT,
+                marginRight.toIntOrNull()?.coerceIn(
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MIN,
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MAX
+                ) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_HORIZONTAL
+            )
+            .putInt(
+                HchatExtraSettings.KEY_MESSAGE_DETAILS_MARGIN_BOTTOM,
+                marginBottom.toIntOrNull()?.coerceIn(
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MIN,
+                    HchatExtraSettings.MESSAGE_DETAILS_MARGIN_MAX
+                ) ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_MARGIN_VERTICAL
+            )
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_BG, savedLightBg)
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_LIGHT_TEXT, savedLightText)
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_DARK_BG, savedDarkBg)
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_DARK_TEXT, savedDarkText)
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_FORMAT, format.ifBlank { HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_FORMAT })
             .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_TIME_FORMAT, timeFormat.ifBlank { HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TIME_FORMAT })
-            .putString(HchatExtraSettings.KEY_MESSAGE_DETAILS_POSITION, savedPosition)
-            .putInt(HchatExtraSettings.KEY_MESSAGE_DETAILS_AVATAR_GAP, savedAvatarGap)
-            .putInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_LEFT_MARGIN,
-                leftMargin.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_LEFT_MARGIN
-            )
-            .putInt(
-                HchatExtraSettings.KEY_MESSAGE_DETAILS_RIGHT_MARGIN,
-                rightMargin.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_RIGHT_MARGIN
-            )
             .putInt(
                 HchatExtraSettings.KEY_MESSAGE_DETAILS_TEXT_SIZE,
-                textSize.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TEXT_SIZE
+                (textSize.toIntOrNull() ?: HchatExtraSettings.DEFAULT_MESSAGE_DETAILS_TEXT_SIZE)
+                    .coerceIn(
+                        HchatExtraSettings.MESSAGE_DETAILS_TEXT_SIZE_MIN,
+                        HchatExtraSettings.MESSAGE_DETAILS_TEXT_SIZE_MAX
+                    )
             )
-            .putBoolean(HchatExtraSettings.KEY_MESSAGE_DETAILS_CLICK_SHOW, clickShow)
             .putBoolean(HchatExtraSettings.KEY_MESSAGE_DETAILS_FORMAT_CONTENT, formatContent)
             .apply()
         lightBg = savedLightBg
         lightText = savedLightText
         darkBg = savedDarkBg
         darkText = savedDarkText
-        position = savedPosition
-        avatarGap = savedAvatarGap.toString()
         Toast.makeText(context, "设置已保存", Toast.LENGTH_SHORT).show()
     }
 
@@ -9379,21 +9385,14 @@ internal fun MessageDetailsConfigPage(
                 bottom = padding.calculateBottomPadding() + 84.dp
             )
         ) {
-            item { SmallTitle(text = "基础") }
+            item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "基础") }
             item {
                 SettingsCard {
                     SwitchRow(
                         checked = enabled,
                         title = "消息显示时间",
-                        summary = "开启后按所选位置显示自定义消息时间",
+                        summary = "固定贴在头像上方，按收发方向对齐显示",
                         onCheckedChange = { enabled = it }
-                    )
-                    InsetDivider()
-                    SwitchRow(
-                        checked = clickShow,
-                        title = "点击显详情",
-                        summary = "点击详情文字后打开消息内容详情",
-                        onCheckedChange = { clickShow = it }
                     )
                     InsetDivider()
                     SwitchRow(
@@ -9465,24 +9464,27 @@ internal fun MessageDetailsConfigPage(
             item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "布局") }
             item {
                 SettingsCard {
-                    PopupChoiceRow(
-                        title = "显示位置",
-                        summary = messageDetailsPositionLabel(position),
-                        options = messageDetailsPositionChoices(),
-                        currentValue = position,
-                        onValueChanged = { position = it }
+                    NumberInputRow("字体大小", "单位 sp，范围 8–16", textSize, onValueChange = { textSize = it })
+                    InsetDivider()
+                    NumberInputRow(
+                        "左间距", "范围 -6–12dp，负数向左偏移", marginLeft,
+                        onValueChange = { marginLeft = it }, allowNegative = true
                     )
                     InsetDivider()
-                    if (position == HchatExtraSettings.POSITION_MESSAGE_BOTTOM) {
-                        NumberInputRow("左边距", "单位 dp，对方消息使用", leftMargin, onValueChange = { leftMargin = it })
-                        InsetDivider()
-                        NumberInputRow("右边距", "单位 dp，自己消息使用", rightMargin, onValueChange = { rightMargin = it })
-                        InsetDivider()
-                    } else {
-                        NumberInputRow("与头像间距", "单位 dp，可设置 0-64", avatarGap, onValueChange = { avatarGap = it })
-                        InsetDivider()
-                    }
-                    NumberInputRow("字体大小", "单位 sp", textSize, onValueChange = { textSize = it })
+                    NumberInputRow(
+                        "上间距", "范围 -6–12dp，负数向上偏移", marginTop,
+                        onValueChange = { marginTop = it }, allowNegative = true
+                    )
+                    InsetDivider()
+                    NumberInputRow(
+                        "右间距", "范围 -6–12dp，负数向右偏移", marginRight,
+                        onValueChange = { marginRight = it }, allowNegative = true
+                    )
+                    InsetDivider()
+                    NumberInputRow(
+                        "下间距", "与头像之间的间距，范围 -6–12dp", marginBottom,
+                        onValueChange = { marginBottom = it }, allowNegative = true
+                    )
                 }
             }
             item { SmallTitle(modifier = Modifier.padding(top = 10.dp), text = "操作") }
@@ -9512,24 +9514,6 @@ internal fun messageDetailsTimeFormatChoices(current: String): List<PopupChoice<
     )
     return if (choices.any { it.value == current }) choices
     else choices + PopupChoice(label = "自定义 · "+ current.ifBlank { "默认时分秒" }, value = current)
-}
-
-internal fun messageDetailsPositionValues(): Set<String> = setOf(
-    HchatExtraSettings.POSITION_MESSAGE_BOTTOM,
-    HchatExtraSettings.POSITION_AVATAR_ABOVE,
-    HchatExtraSettings.POSITION_AVATAR_BELOW
-)
-
-internal fun messageDetailsPositionChoices(): List<PopupChoice<String>> = listOf(
-    PopupChoice(label = "消息下方", value = HchatExtraSettings.POSITION_MESSAGE_BOTTOM),
-    PopupChoice(label = "头像上方", value = HchatExtraSettings.POSITION_AVATAR_ABOVE),
-    PopupChoice(label = "头像下方", value = HchatExtraSettings.POSITION_AVATAR_BELOW)
-)
-
-internal fun messageDetailsPositionLabel(value: String): String = when (value) {
-    HchatExtraSettings.POSITION_AVATAR_ABOVE -> "头像上方"
-    HchatExtraSettings.POSITION_AVATAR_BELOW -> "头像下方"
-    else -> "消息下方"
 }
 
 internal fun messageDetailsVariables(): List<TemplateVariable> {

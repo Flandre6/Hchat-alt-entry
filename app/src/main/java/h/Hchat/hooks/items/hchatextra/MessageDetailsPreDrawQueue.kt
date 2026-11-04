@@ -80,23 +80,38 @@ internal class MessageDetailsPreDrawQueue {
 
 /** Revalidate cached rows once on reattachment, including rows attached without a new bind. */
 internal class MessageDetailsAttachQueue {
-    private val entries = WeakHashMap<View, View.OnAttachStateChangeListener>()
+    /**
+     * 同一条消息行反复 bind 时复用同一个监听器。
+     * 原实现每次先移除再添加，View 内部要复制一次监听器数组，滚动时是纯浪费。
+     */
+    private class Entry(
+        private val queue: MessageDetailsAttachQueue,
+        var action: (View) -> Unit
+    ) : View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(view: View) {
+            if (queue.entries[view] !== this) return
+            queue.pending.schedule(view, view) {
+                if (queue.entries[view] === this) this.action(view)
+            }
+        }
+
+        override fun onViewDetachedFromWindow(view: View) {
+            if (queue.entries[view] === this) queue.pending.cancel(view)
+        }
+    }
+
+    private val entries = WeakHashMap<View, Entry>()
     private val pending = MessageDetailsPreDrawQueue()
 
     // The action must not strongly capture the row or its children.
     fun observe(view: View, action: (View) -> Unit) {
-        cancel(view)
-        val entry = object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(view: View) {
-                if (entries[view] !== this) return
-                pending.schedule(view, view) {
-                    if (entries[view] === this) action(view)
-                }
-            }
-            override fun onViewDetachedFromWindow(view: View) {
-                if (entries[view] === this) pending.cancel(view)
-            }
+        val existing = entries[view]
+        if (existing != null) {
+            // 回调内部每次都重新查绑定表，换掉引用即可，旧回调不会指向过期数据。
+            existing.action = action
+            return
         }
+        val entry = Entry(this, action)
         entries[view] = entry
         view.addOnAttachStateChangeListener(entry)
     }

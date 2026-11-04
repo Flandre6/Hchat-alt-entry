@@ -6342,10 +6342,29 @@ internal fun TextFieldValue.insertToken(token: String): TextFieldValue {
 }
 
 @Composable
-internal fun NumberInputRow(title: String, summary: String, value: String, onValueChange: (String) -> Unit) {
-    InputRow(title, summary, value.filter { it.isDigit() }, onValueChange = { next ->
-        onValueChange(next.filter { it.isDigit() })
+internal fun NumberInputRow(
+    title: String,
+    summary: String,
+    value: String,
+    // 必须排在 onValueChange 之前：Kotlin 的尾随 lambda 只认最后一个参数，
+    // 把带默认值的 Boolean 放到最后，所有 `NumberInputRow(a, b, c) { ... }` 都会报 onValueChange 缺失。
+    allowNegative: Boolean = false,
+    onValueChange: (String) -> Unit
+) {
+    InputRow(title, summary, normalizeNumberInput(value, allowNegative), onValueChange = { next ->
+        onValueChange(normalizeNumberInput(next, allowNegative))
     })
+}
+
+/** 只留数字；允许负数时保留开头的一个负号，按住负号还没输数字的中间态也要留住。 */
+private fun normalizeNumberInput(raw: String, allowNegative: Boolean): String {
+    val digits = raw.filter { it.isDigit() }
+    val negative = allowNegative && raw.trimStart().startsWith("-")
+    return when {
+        negative && digits.isNotEmpty() -> "-$digits"
+        negative -> "-"
+        else -> digits
+    }
 }
 
 @Composable

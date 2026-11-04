@@ -6,7 +6,7 @@ import h.Hchat.ui.SimpleFeatureSettingsProvider
 class MessageDetailsSettingsProvider : SimpleFeatureSettingsProvider(
     FEATURE_ID,
     "消息显示时间",
-    "在聊天消息旁显示时间、类型等详情",
+    "固定头像上方显示时间、类型等详情，支持四方向间距调整",
     FeatureSettingsProvider.CATEGORY_PRACTICAL
 ) {
     companion object {

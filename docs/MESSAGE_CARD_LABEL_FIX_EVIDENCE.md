@@ -40,3 +40,14 @@
 ## 本次产物验证
 
 2026-09-11 本地 Release 构建通过（2 分 46 秒），保留 R8 与资源压缩；APK Signature Scheme v2、ZIP 完整性校验通过，ARM 64/32 库完整，签名与前次本地安装包一致。R8 mapping 包含新适配器绑定定位与布局观察器。布局观察器 7 项、预绘制/附着 14 项回归通过，git diff --check 通过。尚未安装或执行微信 UI 回归。
+
+## 收敛为头像锚点单方案（2026-11-04）
+
+2026-11-03 曾把标签改为 `ViewOverlay` + 自定义 `Drawable`（`AvatarTimeOverlay`）绘制，后续重构又回到真实子 `View` 方案并进一步收敛，overlay 版本已废弃。最终实现：
+
+- 删除 `MessageDetailsLayoutObserver`、消息底部锚点（`addBottomDetailsView`/`rowBottomAnchor`/`wrapCardDetailsAnchor`/`safeBottomAnchor`/`messageContentAnchor`）、位置选项（消息下方/头像上方/头像下方）、与头像间距及"点击显详情"配置；标签固定贴在头像上方。
+- 标签作为消息行根 `RelativeLayout` 的子 `View`：布局规则优先接在微信原生时间控件下方，无可用时间锚点时贴头像容器顶部，按收发方向对齐头像的直接子 `View`；单行、超长省略，不再拦截消息行的点击与长按。
+- 四向间距（左/右默认 8dp、上/下默认 0dp，范围 -6～12dp）与字号（8–16sp）可调；布局参数按"锚点 + 间距 + 字号 + scaledDensity"签名，命中时跳过 `setLayoutParams` 与同步测量。头像容器顶部按标签实际高度补偿 padding（允许少量视觉交叠），移除标签或销毁时恢复原始 padding。
+- 绑定热路径：绑定前捕获的 holder/行根容器直接复用、行根字段缓存 + 负缓存、attach 监听器复用、清理标签先按 tag 子树查找、`DateTimeFormatter` 缓存。
+
+上述改动未重新做微信真机 UI 回归，间距与对齐效果仍需设备确认；资料页 ID 点击复制修复也需真机验证。

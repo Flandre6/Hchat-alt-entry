@@ -4,19 +4,15 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.res.Configuration
-import android.graphics.Color
+import android.text.TextUtils
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AbsListView
-import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
 import h.Hchat.hooks.core.BaseFeature
 import h.Hchat.hooks.core.FeatureContext
 import h.Hchat.hooks.core.HookRegistry
@@ -50,11 +46,7 @@ class ProfileIdFeature : BaseFeature() {
         private const val CHATROOM_PREF_KEY = "hchat_profile_id"
         private const val CHATROOM_NAME_PREF_KEY = "room_name"
         private const val CHATROOM_BIND_RETRY_LIMIT = 8
-        private val CHATROOM_ANCHOR_PREF_KEYS = arrayOf(
-            "expand_room_member",
-            "see_room_member",
-            "room_name"
-        )
+        private val CHATROOM_ANCHOR_PREF_KEYS = arrayOf("room_name")
         private const val LABEL = "ID"
 
         @Volatile
@@ -87,6 +79,7 @@ class ProfileIdFeature : BaseFeature() {
             hookAfter(clazz, "initView") { param ->
                 injectProfileId(context, param.thisObject as? Activity, ProfileKind.CONTACT)
             }
+            hookPreferenceTreeClick(clazz, ProfileKind.CONTACT)
         }
 
         private fun hookChatroomProfile(context: Context, classLoader: ClassLoader) {
@@ -98,10 +91,15 @@ class ProfileIdFeature : BaseFeature() {
             hookAfter(clazz, "initView") { param ->
                 injectChatroomProfileId(context, param.thisObject as? Activity)
             }
-            hookChatroomPreferenceClick(clazz)
+            hookPreferenceTreeClick(clazz, ProfileKind.CHATROOM)
         }
 
-        private fun hookChatroomPreferenceClick(clazz: Class<*>) {
+        /**
+         * Preference 行的点击最终路由到所在 Activity 的 onPreferenceTreeClick，
+         * 只在 Preference 对象上挂 OnClickListener 在部分版本不生效。
+         * 群聊页一直靠这个 Hook 完成复制，好友资料页此前缺失导致点不动，这里两页统一。
+         */
+        private fun hookPreferenceTreeClick(clazz: Class<*>, kind: ProfileKind) {
             methodsOf(clazz)
                 .firstOrNull { it.name == "onPreferenceTreeClick" && it.parameterTypes.size >= 2 }
                 ?.let { method ->
@@ -110,13 +108,13 @@ class ProfileIdFeature : BaseFeature() {
                             val activity = param.thisObject as? Activity ?: return
                             val preference = param.args.getOrNull(1) ?: return
                             if (preferenceKey(preference) != CHATROOM_PREF_KEY) return
-                            val profileId = resolveProfileId(activity, ProfileKind.CHATROOM) ?: return
+                            val profileId = resolveProfileId(activity, kind) ?: return
                             copyProfileId(activity, profileId)
                             param.result = true
                         }
                     })
                 }
-                ?: h.Hchat.utils.HLog.e("$TAG 未找到群聊资料页 Preference 点击方法")
+                ?: h.Hchat.utils.HLog.e("$TAG 未找到资料页 Preference 点击方法: ${clazz.name}")
         }
 
         private fun injectChatroomProfileId(context: Context, activity: Activity?) {
@@ -152,7 +150,12 @@ class ProfileIdFeature : BaseFeature() {
             val profileId = resolveProfileId(activity, kind) ?: return
             val decor = activity.window?.decorView as? ViewGroup ?: return
             if (post) {
-                decor.post {
+                // 先于历史发言记录完成插入，后者会识别本行并排到其后。
+                // View 没有 postAtFrontOfQueue，队首插入要走它绑定的 Handler。
+                val handler = decor.handler
+                if (handler != null) {
+                    handler.postAtFrontOfQueue { injectProfileIdNow(activity, profileId, kind) }
+                } else {
                     injectProfileIdNow(activity, profileId, kind)
                 }
             } else {
@@ -163,14 +166,118 @@ class ProfileIdFeature : BaseFeature() {
         private fun injectProfileIdNow(activity: Activity, profileId: String, kind: ProfileKind) {
             val decor = activity.window?.decorView as? ViewGroup ?: return
             val existing = findInjectedRow(decor)
+            if (injectContactPreferenceId(activity, profileId)) {
+                existing?.let { (it.parent as? ViewGroup)?.removeView(it) }
+                return
+            }
             if (existing != null) {
                 bindRow(existing, activity, profileId)
                 return
             }
-            val container = findInsertionContainer(decor) ?: return
-            val row = createRow(activity, profileId)
-            val index = insertionIndex(container, kind)
+            val (container, anchorRow) = findProfileAnchor(decor, kind) ?: return
+            val row = createRow(activity, profileId, anchorRow)
+            val index = container.indexOfChild(anchorRow)
             container.addView(row, index.coerceIn(0, container.childCount), row.layoutParams)
+        }
+
+        private fun injectContactPreferenceId(activity: Activity, profileId: String): Boolean {
+            val decor = activity.window?.decorView as? ViewGroup ?: return false
+            val adapter = findProfileListView(decor)?.adapter
+            if (adapter != null && injectContactPreference(adapter, activity, profileId)) {
+                // 好友页原来的点击只绑在 Preference 对象上，部分版本点不动；
+                // 和群聊页一样，渲染完成后再给整行 View 补一次。
+                bindRenderedRow(activity, profileId)
+                return true
+            }
+            val screen = KavaReflector.invokeMethod(activity, "getPreferenceScreen") ?: return false
+            if (!injectContactPreference(screen, activity, profileId)) return false
+            bindRenderedRow(activity, profileId)
+            return true
+        }
+
+        private fun injectContactPreference(container: Any, activity: Activity, profileId: String): Boolean {
+            val anchor = findListedPreference(container) { preferenceTitle(it) == "朋友资料" } ?: return false
+            val titleGetter = findPreferenceTitleGetter(anchor, "朋友资料")
+            val existing = findListedPreference(container) { preferenceKey(it) == CHATROOM_PREF_KEY }
+            if (existing != null) {
+                bindPreference(existing, profileId, titleGetter)
+                bindPreferenceClick(existing, activity, profileId)
+                notifyPreferenceChanged(container)
+                return true
+            }
+            val preferenceClass = KavaReflector.loadClass(
+                "com.tencent.mm.ui.base.preference.Preference",
+                activity.classLoader
+            ) ?: return false
+            val preference = KavaReflector.newInstance(
+                KavaReflector.findConstructor(preferenceClass, Context::class.java),
+                activity
+            ) ?: return false
+            setPreferenceKey(preference, CHATROOM_PREF_KEY)
+            bindPreference(preference, profileId, titleGetter)
+            bindPreferenceClick(preference, activity, profileId)
+            copyLayoutResource(anchor, preference)
+            val anchorIndex = listedPreferenceIndex(container, anchor) ?: return false
+            if (!invokeAddPreference(container, preference, anchorIndex)) return false
+            notifyPreferenceChanged(container)
+            return true
+        }
+
+        private fun findListedPreference(container: Any, predicate: (Any) -> Boolean): Any? {
+            for (index in 0 until listedPreferenceCount(container)) {
+                val preference = listedPreferenceAt(container, index) ?: continue
+                if (preferenceKey(preference) != null && predicate(preference)) return preference
+            }
+            return null
+        }
+
+        private fun listedPreferenceIndex(container: Any, target: Any): Int? {
+            for (index in 0 until listedPreferenceCount(container)) {
+                if (listedPreferenceAt(container, index) === target) return index
+            }
+            return null
+        }
+
+        private fun listedPreferenceCount(container: Any): Int {
+            return methodsOf(container.javaClass).firstNotNullOfOrNull { method ->
+                if (method.name == "getCount" && method.parameterTypes.isEmpty()) {
+                    (KavaReflector.invoke(method, container) as? Number)?.toInt()
+                } else null
+            } ?: 0
+        }
+
+        private fun listedPreferenceAt(container: Any, index: Int): Any? {
+            return methodsOf(container.javaClass).firstNotNullOfOrNull { method ->
+                if (method.name == "getItem" && method.parameterTypes.size == 1 &&
+                    (method.parameterTypes[0] == Integer.TYPE || method.parameterTypes[0] == java.lang.Integer::class.java)
+                ) {
+                    KavaReflector.invoke(method, container, index)
+                } else null
+            }
+        }
+
+        private fun findProfileListView(group: ViewGroup): android.widget.ListView? {
+            for (index in 0 until group.childCount) {
+                val child = group.getChildAt(index)
+                if (child is android.widget.ListView) return child
+                if (child is ViewGroup) findProfileListView(child)?.let { return it }
+            }
+            return null
+        }
+
+        private fun preferenceTitle(preference: Any?): String {
+            if (preference == null) return ""
+            for (name in arrayOf("i", "h")) {
+                (KavaReflector.readField(preference, name) as? CharSequence)
+                    ?.toString()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { return it }
+            }
+            return methodsOf(preference.javaClass).firstNotNullOfOrNull { method ->
+                if (method.parameterTypes.isEmpty() && CharSequence::class.java.isAssignableFrom(method.returnType)) {
+                    (KavaReflector.invoke(method, preference) as? CharSequence)?.toString()?.takeIf { it.isNotBlank() }
+                } else null
+            }.orEmpty()
         }
 
         private fun injectChatroomPreferenceId(activity: Activity, profileId: String) {
@@ -182,7 +289,7 @@ class ProfileIdFeature : BaseFeature() {
                 bindPreference(existing, profileId, titleGetter)
                 bindPreferenceClick(existing, activity, profileId)
                 notifyPreferenceChanged(screen)
-                bindRenderedChatroomRow(activity, profileId)
+                bindRenderedRow(activity, profileId)
                 return
             }
             val preferenceClass = KavaReflector.loadClass(
@@ -196,13 +303,14 @@ class ProfileIdFeature : BaseFeature() {
             setPreferenceKey(preference, CHATROOM_PREF_KEY)
             bindPreference(preference, profileId, titleGetter)
             bindPreferenceClick(preference, activity, profileId)
+            copyLayoutResource(roomName, preference)
             val anchor = findChatroomAnchorPreference(screen)
             if (!addPreferenceBeforeAnchor(screen, preference, anchor)) {
                 h.Hchat.utils.HLog.e("$TAG 群聊 ID Preference 插入失败")
                 return
             }
             notifyPreferenceChanged(screen)
-            bindRenderedChatroomRow(activity, profileId)
+            bindRenderedRow(activity, profileId)
         }
 
         private fun findChatroomAnchorPreference(screen: Any): Any? {
@@ -228,9 +336,8 @@ class ProfileIdFeature : BaseFeature() {
         private fun addPreferenceBeforeAnchor(screen: Any, preference: Any, anchor: Any?): Boolean {
             val index = preferenceIndex(screen, anchor)
                 ?: CHATROOM_ANCHOR_PREF_KEYS.firstNotNullOfOrNull { preferenceIndexByKey(screen, it) }
-            if (index != null && invokeAddPreference(screen, preference, index)) return true
-            if (invokeAddPreference(screen, preference, 0)) return true
-            return false
+                ?: return false
+            return invokeAddPreference(screen, preference, index)
         }
 
         private fun invokeAddPreference(screen: Any, preference: Any, index: Int): Boolean {
@@ -304,7 +411,8 @@ class ProfileIdFeature : BaseFeature() {
             }
         }
 
-        private fun bindRenderedChatroomRow(activity: Activity, profileId: String, attempt: Int = 0) {
+        /** Preference 的点击回调在部分版本不生效，渲染完成后直接给整行 View 补一次点击。 */
+        private fun bindRenderedRow(activity: Activity, profileId: String, attempt: Int = 0) {
             val decor = activity.window?.decorView as? ViewGroup ?: return
             decor.postDelayed({
                 val title = "$LABEL: $profileId"
@@ -316,7 +424,7 @@ class ProfileIdFeature : BaseFeature() {
                     return@postDelayed
                 }
                 if (attempt + 1 < CHATROOM_BIND_RETRY_LIMIT) {
-                    bindRenderedChatroomRow(activity, profileId, attempt + 1)
+                    bindRenderedRow(activity, profileId, attempt + 1)
                 }
             }, if (attempt == 0) 0L else 120L)
         }
@@ -326,22 +434,30 @@ class ProfileIdFeature : BaseFeature() {
             titleView.setOnClickListener(listener)
             titleView.isClickable = true
             titleView.isFocusable = false
+            // 一路绑到 ListView 的直接子项（列表项根 View），保证点整行任意位置都能复制；
+            // 固定层数在层级更深的布局里会漏掉列表项根，点文字以外的空白就没有反应。
             var current: View? = titleView
             var depth = 0
-            while (current != null && depth < 5) {
+            while (current != null && depth < 10) {
                 current.setOnClickListener(listener)
                 current.isClickable = true
                 current.isFocusable = false
-                current = current.parent as? View
+                val parent = current.parent
+                if (parent is android.widget.ListView) break
+                current = parent as? View
                 depth++
             }
         }
 
         private fun findRoomNameTitleGetter(preference: Any): java.lang.reflect.Method? {
+            return findPreferenceTitleGetter(preference, "群聊名称")
+        }
+
+        private fun findPreferenceTitleGetter(preference: Any, expectedTitle: String): java.lang.reflect.Method? {
             return methodsOf(preference.javaClass).firstOrNull { method ->
                 method.parameterTypes.isEmpty() &&
                     CharSequence::class.java.isAssignableFrom(method.returnType) &&
-                    (KavaReflector.invoke(method, preference)?.toString() == "群聊名称")
+                    (KavaReflector.invoke(method, preference)?.toString() == expectedTitle)
             }
         }
 
@@ -394,6 +510,13 @@ class ProfileIdFeature : BaseFeature() {
                     null
                 }
             }
+        }
+
+        private fun copyLayoutResource(from: Any?, to: Any) {
+            if (from == null) return
+            val layout = KavaReflector.invokeMethod(from, "getLayoutResource") as? Number ?: return
+            if (layout.toInt() == 0) return
+            KavaReflector.invokeMethod(to, "setLayoutResource", layout.toInt())
         }
 
         private fun notifyPreferenceChanged(screen: Any) {
@@ -462,58 +585,35 @@ class ProfileIdFeature : BaseFeature() {
             return null
         }
 
-        private fun findInsertionContainer(root: ViewGroup): ViewGroup? {
-            val candidates = ArrayList<ViewGroup>()
-            collectLinearContainers(root, candidates)
-            return candidates
-                .filter { it.childCount >= 2 }
-                .maxByOrNull { scoreContainer(it) }
-        }
+        private fun findProfileAnchor(root: ViewGroup, kind: ProfileKind): Pair<LinearLayout, View>? {
+            val anchorTitle = if (kind == ProfileKind.CHATROOM) "群聊名称" else "朋友资料"
+            var best: Pair<LinearLayout, View>? = null
+            var bestScore = Int.MAX_VALUE
 
-        private fun collectLinearContainers(group: ViewGroup, out: MutableList<ViewGroup>) {
-            if (group is LinearLayout && group.orientation == LinearLayout.VERTICAL && isUsableContainer(group)) {
-                out.add(group)
-            }
-            forEachChild(group) { child ->
-                if (child is ViewGroup) collectLinearContainers(child, out)
-            }
-        }
-
-        private fun isUsableContainer(group: ViewGroup): Boolean {
-            if (group is FrameLayout || group is ScrollView) return false
-            val width = group.width
-            return width == 0 || width > dp(group.context, 220f)
-        }
-
-        private fun scoreContainer(group: ViewGroup): Int {
-            var score = 0
-            var textCount = 0
-            if (containsScrollableContent(group)) score += 30
-            collectText(group, 0) { text ->
-                textCount++
-                when {
-                    text.contains("备注") -> score += 12
-                    text.contains("标签") -> score += 12
-                    text.contains("群聊名称") -> score += 16
-                    text.contains("查找聊天记录") -> score += 10
-                    text.contains("聊天信息") -> score += 8
-                    text.contains("设置") -> score += 4
+            fun visit(group: ViewGroup) {
+                if (group is LinearLayout && group.orientation == LinearLayout.VERTICAL) {
+                    for (index in 0 until group.childCount) {
+                        val child = group.getChildAt(index) as? ViewGroup ?: continue
+                        val lines = textOf(child).lineSequence()
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .toList()
+                        if (anchorTitle !in lines) continue
+                        if (findTextView(child) { true } == null) continue
+                        val score = lines.size * 1000 + lines.sumOf { it.length }
+                        if (score < bestScore) {
+                            best = group to child
+                            bestScore = score
+                        }
+                    }
+                }
+                forEachChild(group) { child ->
+                    if (child is ViewGroup) visit(child)
                 }
             }
-            score += group.childCount.coerceAtMost(12)
-            if (textCount == 0) score -= 20
-            if (group.parent is ScrollView) score += 10
-            return score
-        }
 
-        private fun containsScrollableContent(group: ViewGroup): Boolean {
-            for (index in 0 until group.childCount) {
-                val child = group.getChildAt(index)
-                if (child is AbsListView || child is ScrollView || child.javaClass.name.contains("RecyclerView")) {
-                    return true
-                }
-            }
-            return false
+            visit(root)
+            return best
         }
 
         private fun collectText(view: View, depth: Int, block: (String) -> Unit) {
@@ -527,37 +627,13 @@ class ProfileIdFeature : BaseFeature() {
             }
         }
 
-        private fun insertionIndex(container: ViewGroup, kind: ProfileKind): Int {
-            for (index in 0 until container.childCount) {
-                val child = container.getChildAt(index)
-                val text = textOf(child)
-                if (kind == ProfileKind.CHATROOM && text.contains("群聊名称")) {
-                    return index
-                }
-                if (kind == ProfileKind.CONTACT &&
-                    (child is AbsListView || child is ScrollView || child.javaClass.name.contains("RecyclerView"))
-                ) {
-                    return index
-                }
-                if (
-                    text.contains("备注") ||
-                    text.contains("标签") ||
-                    (kind != ProfileKind.CHATROOM && text.contains("群聊名称")) ||
-                    text.contains("查找聊天记录")
-                ) {
-                    return index
-                }
-            }
-            return if (container.childCount > 0) 1 else 0
-        }
-
         private fun textOf(view: View): String {
             val builder = StringBuilder()
             collectText(view, 0) { builder.append(it).append('\n') }
             return builder.toString()
         }
 
-        private fun createRow(activity: Activity, profileId: String): LinearLayout {
+        private fun createRow(activity: Activity, profileId: String, template: View): LinearLayout {
             val row = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -568,27 +644,73 @@ class ProfileIdFeature : BaseFeature() {
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             }
+            // 文本按内容收窄、超长单行省略：ID 本身很短，用 weight 铺满整行会让右侧
+            // 留出一大片空白，看起来像是挤掉了别的信息。
             val text = TextView(activity).apply {
                 textSize = 16f
                 includeFontPadding = true
-                maxLines = 2
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val arrow = TextView(activity).apply {
-                setText("›")
-                textSize = 24f
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(dp(activity, 24f), ViewGroup.LayoutParams.WRAP_CONTENT)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
             }
             row.addView(text)
-            row.addView(arrow)
+            // 完全照抄“朋友资料”或“群聊名称”行的高度、内边距、字号、颜色和字体。
+            applyTemplateStyle(row, text, template, activity)
+            // 整行点击即复制，不再放箭头：箭头意味着"还有下一级"，这里并没有跳转。
+            row.isClickable = true
             bindRow(row, activity, profileId)
             return row
         }
 
+        private fun applyTemplateStyle(row: LinearLayout, text: TextView, template: View, activity: Activity) {
+            row.minimumHeight = template.height.takeIf { it > 0 } ?: template.minimumHeight
+            row.setPadding(template.paddingLeft, template.paddingTop, template.paddingRight, template.paddingBottom)
+            row.isClickable = true
+            val sourceText = (template as? ViewGroup)?.let { findTextView(it) { true } } ?: (template as? TextView)
+            if (sourceText != null) {
+                text.setTextSize(TypedValue.COMPLEX_UNIT_PX, sourceText.textSize)
+                text.setTextColor(sourceText.textColors)
+                text.typeface = sourceText.typeface
+                text.includeFontPadding = sourceText.includeFontPadding
+                text.gravity = sourceText.gravity
+                text.letterSpacing = sourceText.letterSpacing
+                val vertical = sourceText.paddingTop
+                text.setPadding(0, vertical, 0, vertical)
+                alignTextToTemplate(text, template, sourceText)
+            }
+            // 上限留出整行可用宽度，超出交给省略号，避免长 ID 撑出屏幕。
+            text.maxWidth = (activity.resources.displayMetrics.widthPixels -
+                row.paddingLeft - row.paddingRight).coerceAtLeast(dp(activity, 120f))
+        }
+
+        /** 让注入文本的左边线与“朋友资料”或“群聊名称”的原生文本严格对齐。 */
+        private fun alignTextToTemplate(text: TextView, template: View, sourceText: TextView) {
+            val offset = leftWithin(template, sourceText) - template.paddingLeft
+            val params = text.layoutParams as? LinearLayout.LayoutParams ?: return
+            val margin = offset.coerceAtLeast(0)
+            if (params.marginStart != margin) {
+                params.marginStart = margin
+                params.marginEnd = 0
+                text.layoutParams = params
+            }
+        }
+
+        /** descendant 相对 ancestor 的水平偏移；不在同一棵树上时返回 0。 */
+        private fun leftWithin(ancestor: View, descendant: View): Int {
+            var offset = 0
+            var current: View? = descendant
+            while (current != null && current !== ancestor) {
+                offset += current.left
+                current = current.parent as? View
+            }
+            return if (current === ancestor) offset else 0
+        }
+
         private fun bindRow(row: View, activity: Activity, profileId: String) {
             row.tag = INJECTED_VALUE_TAG + profileId
-            applyRowTheme(row, activity)
             val textView = if (row is ViewGroup) {
                 firstTextChild(row)
             } else {
@@ -598,47 +720,6 @@ class ProfileIdFeature : BaseFeature() {
             row.setOnClickListener {
                 copyProfileId(activity, profileId)
             }
-        }
-
-        private fun applyRowTheme(row: View, context: Context) {
-            row.setBackgroundColor(themeColor(context, android.R.attr.colorBackground, fallbackBackgroundColor(context)))
-            if (row is ViewGroup) {
-                var textIndex = 0
-                forEachTextView(row) { textView ->
-                    val fallback = if (textIndex == 0) fallbackPrimaryTextColor(context) else fallbackSecondaryTextColor(context)
-                    val attr = if (textIndex == 0) android.R.attr.textColorPrimary else android.R.attr.textColorSecondary
-                    textView.setTextColor(themeColor(context, attr, fallback))
-                    textIndex++
-                }
-            }
-        }
-
-        private fun themeColor(context: Context, attr: Int, fallback: Int): Int {
-            val array = context.theme.obtainStyledAttributes(intArrayOf(attr))
-            return try {
-                array.getColor(0, fallback)
-            } catch (_: Throwable) {
-                fallback
-            } finally {
-                array.recycle()
-            }
-        }
-
-        private fun fallbackBackgroundColor(context: Context): Int {
-            return if (isNightMode(context)) Color.rgb(25, 25, 25) else Color.WHITE
-        }
-
-        private fun fallbackPrimaryTextColor(context: Context): Int {
-            return if (isNightMode(context)) Color.rgb(235, 235, 235) else Color.rgb(32, 32, 32)
-        }
-
-        private fun fallbackSecondaryTextColor(context: Context): Int {
-            return if (isNightMode(context)) Color.rgb(128, 128, 128) else Color.rgb(178, 178, 178)
-        }
-
-        private fun isNightMode(context: Context): Boolean {
-            return (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
         }
 
         private fun copyProfileId(activity: Activity, profileId: String) {
@@ -678,16 +759,6 @@ class ProfileIdFeature : BaseFeature() {
             return null
         }
 
-        private fun forEachTextView(group: ViewGroup, block: (TextView) -> Unit) {
-            for (index in 0 until group.childCount) {
-                val child = group.getChildAt(index)
-                if (child is TextView) {
-                    block(child)
-                } else if (child is ViewGroup) {
-                    forEachTextView(child, block)
-                }
-            }
-        }
     }
 
     private enum class ProfileKind {
