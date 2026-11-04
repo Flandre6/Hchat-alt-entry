@@ -43,6 +43,7 @@ internal class ConversationGroupFileRequest<T> private constructor(
     private val delivery = Runnable { deliverOnMain() }
 
     fun execute(task: (AtomicBoolean) -> T, failure: (Throwable) -> T) {
+        var rejection: RejectedExecutionException? = null
         synchronized(lock) {
             if (canceled.get() || started) return
             started = true
@@ -52,27 +53,47 @@ internal class ConversationGroupFileRequest<T> private constructor(
             } }
             val job = FutureTask<Unit> {
                 val action = synchronized(lock) { work.also { work = null } } ?: return@FutureTask
-                try { deliver(action()) } catch (_: CancellationException) { cancel() }
+                try {
+                    deliver(action())
+                } catch (_: CancellationException) {
+                    cancel()
+                } catch (error: Throwable) {
+                    cancel()
+                    HLog.e("[Hchat:ConversationGroup] 文件任务处理异常", error)
+                }
             }
             future = job
             try { executor.execute(job) } catch (error: RejectedExecutionException) {
                 work = null
                 future = null
-                deliver(failure(error))
+                rejection = error
+            }
+        }
+        rejection?.let { error ->
+            if (!canceled.get()) {
+                try { deliver(failure(error)) } catch (failureError: Throwable) {
+                    cancel()
+                    HLog.e("[Hchat:ConversationGroup] 文件任务处理异常", failureError)
+                }
             }
         }
     }
 
     fun deliver(value: T) {
+        var shouldDiscard = false
+        var postFailed = false
         synchronized(lock) {
             if (canceled.get() || resultReady) {
-                discard(value)
-                return
+                shouldDiscard = true
+            } else {
+                result = value
+                resultReady = true
+                postFailed = !main.post(delivery)
             }
-            result = value
-            resultReady = true
-            if (!main.post(delivery)) cancel()
         }
+        // 清理回调可能获取 Hook 锁，不得持有请求锁执行。
+        if (shouldDiscard) discard(value)
+        if (postFailed) cancel()
     }
 
     private fun deliverOnMain() {
@@ -81,7 +102,7 @@ internal class ConversationGroupFileRequest<T> private constructor(
         val callback: ((T) -> Unit)?
         val value: T
         synchronized(lock) {
-            if (canceled.get() || !resultReady) return
+            if (!resultReady || !canceled.compareAndSet(false, true)) return
             callback = completion
             @Suppress("UNCHECKED_CAST")
             value = result as T
@@ -89,23 +110,33 @@ internal class ConversationGroupFileRequest<T> private constructor(
             result = null
             resultReady = false
         }
-        cancel()
+        release()
         callback?.invoke(value)
     }
 
     fun cancel() {
         if (!canceled.compareAndSet(false, true)) return
+        release()
+    }
+
+    private fun release() {
+        var discarded: T? = null
+        var hadResult = false
         val oldFuture = synchronized(lock) {
             completion = null
             if (resultReady) {
-                @Suppress("UNCHECKED_CAST")
-                discard(result as T)
+                discarded = result
+                hadResult = true
             }
             result = null
             resultReady = false
             work = null
             main.removeCallbacks(delivery)
             future.also { future = null }
+        }
+        if (hadResult) {
+            @Suppress("UNCHECKED_CAST")
+            discard(discarded as T)
         }
         oldFuture?.cancel(true)
         oldFuture?.let { executor.remove(it) }
@@ -169,7 +200,8 @@ internal class ConversationGroupFileRequest<T> private constructor(
 
 /** 只持有自己注册的结果 Hook；失败可重试，功能销毁后允许重新安装。 */
 internal class ConversationGroupFileResultHooks(
-    private val onResult: (Activity, Int, Int, Intent?) -> Unit
+    private val onResult: (Activity, Int, Int, Intent?) -> Unit,
+    private val onHostFailure: ((Activity, Int) -> Unit)? = null
 ) {
     private val hooks = linkedMapOf<Class<*>, Set<XC_MethodHook.Unhook>>()
     private val retiredHooks = linkedSetOf<XC_MethodHook.Unhook>()
@@ -190,7 +222,12 @@ internal class ConversationGroupFileResultHooks(
                             val result = param.args.getOrNull(1) as? Int ?: Activity.RESULT_CANCELED
                             synchronized(this@ConversationGroupFileResultHooks) {
                                 if (generation == installingGeneration) {
-                                    onResult(owner, code, result, param.args.getOrNull(2) as? Intent)
+                                    if (param.hasThrowable() && onHostFailure != null) {
+                                        runCatching { onHostFailure(owner, code) }
+                                            .onFailure { HLog.e("[Hchat:ConversationGroup] 取消失败的文件结果请求异常", it) }
+                                    } else {
+                                        onResult(owner, code, result, param.args.getOrNull(2) as? Intent)
+                                    }
                                 }
                             }
                         }

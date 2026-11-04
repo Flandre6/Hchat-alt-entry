@@ -19,10 +19,9 @@ internal object ConversationGroupSendPicker {
     private val nextRequestCode = AtomicInteger(REQUEST_CODE_START)
     private val pending = ConcurrentHashMap<Int, ConversationGroupFileRequest<PickedFile?>>()
     private val requests = ConcurrentHashMap<Int, ConversationGroupFileRequest<PickedFile?>>()
-    private val hooks = ConversationGroupFileResultHooks(::onResult)
+    private val hooks = ConversationGroupFileResultHooks(::onResult, ::onHostFailure)
 
-    @Synchronized
-    fun launch(activity: Activity, mimeType: String, chooserTitle: String, callback: (PickedFile?) -> Unit) {
+    fun launch(activity: Activity, mimeType: String, chooserTitle: String, callback: (PickedFile?) -> Unit): Unit = synchronized(hooks) {
         if (activity.isFinishing || activity.isDestroyed) return
         if (!hooks.ensure(activity.javaClass)) {
             cancelAll()
@@ -31,10 +30,14 @@ internal object ConversationGroupSendPicker {
         }
         val requestCode = allocateRequestCode()
         val request = ConversationGroupFileRequest.create(activity, callback) {
-            pending.remove(requestCode)
-            requests.remove(requestCode)
+            synchronized(hooks) {
+                pending.remove(requestCode)
+                requests.remove(requestCode)
+                if (pending.isEmpty()) hooks.clear()
+            }
         }
         if (request == null) {
+            if (pending.isEmpty()) hooks.clear()
             callback(null)
             return
         }
@@ -61,31 +64,40 @@ internal object ConversationGroupSendPicker {
         }
     }
 
-    @Synchronized
-    fun cancelAll() {
+    fun cancelAll() = synchronized(hooks) {
         requests.values.toList().forEach { it.cancel() }
         pending.clear()
         hooks.clear()
     }
 
+    private fun onHostFailure(activity: Activity, code: Int) {
+        val request = pending[code] ?: return
+        if (request.activity.get() === activity && pending.remove(code, request)) request.cancel()
+    }
+
     private fun onResult(activity: Activity, code: Int, resultCode: Int, data: Intent?) {
         val request = pending[code] ?: return
         if (request.activity.get() !== activity || !pending.remove(code, request)) return
-        val uri = data?.data
-        if (resultCode != Activity.RESULT_OK || uri == null) {
-            request.deliver(null)
-            return
+        try {
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                request.deliver(null)
+                return
+            }
+            val context = activity.applicationContext
+            request.execute(task = { canceled ->
+                if (canceled.get()) throw java.util.concurrent.CancellationException()
+                takeReadPermission(context, data, uri)
+                if (canceled.get()) throw java.util.concurrent.CancellationException()
+                PickedFile(uri, displayName(context, uri))
+            }, failure = { error ->
+                HLog.e("$TAG 读取发送文件信息失败", error)
+                null
+            })
+        } catch (error: Throwable) {
+            request.cancel()
+            HLog.e("$TAG 处理文件选择结果失败", error)
         }
-        val context = activity.applicationContext
-        request.execute(task = { canceled ->
-            if (canceled.get()) throw java.util.concurrent.CancellationException()
-            takeReadPermission(context, data, uri)
-            if (canceled.get()) throw java.util.concurrent.CancellationException()
-            PickedFile(uri, displayName(context, uri))
-        }, failure = { error ->
-            HLog.e("$TAG 读取发送文件信息失败", error)
-            null
-        })
     }
 
     fun materialize(context: Context, picked: PickedFile): MaterializedFile {

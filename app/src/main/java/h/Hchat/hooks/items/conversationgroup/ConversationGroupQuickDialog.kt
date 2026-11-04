@@ -897,7 +897,7 @@ private object ConversationGroupDocumentBridge {
     private val nextRequestCode = AtomicInteger(REQUEST_CODE_START)
     private val pending = ConcurrentHashMap<Int, Pending>()
     private val requests = ConcurrentHashMap<Int, ConversationGroupFileRequest<DocumentResult>>()
-    private val hooks = ConversationGroupFileResultHooks(::onResult)
+    private val hooks = ConversationGroupFileResultHooks(::onResult, ::onHostFailure)
 
     fun launchExport(activity: Activity, json: String, callback: (DocumentResult) -> Unit) {
         val fileName = "Hchat_chat_groups_" +
@@ -924,14 +924,13 @@ private object ConversationGroupDocumentBridge {
         }
     }
 
-    @Synchronized
     private fun launch(
         activity: Activity,
         operation: Operation,
         intent: Intent,
         callback: (DocumentResult) -> Unit,
         fallback: (() -> Intent)? = null
-    ) {
+    ): Unit = synchronized(hooks) {
         if (activity.isFinishing || activity.isDestroyed) return
         if (!hooks.ensure(activity.javaClass)) {
             cancelAll()
@@ -940,10 +939,14 @@ private object ConversationGroupDocumentBridge {
         }
         val requestCode = allocateRequestCode()
         val request = ConversationGroupFileRequest.create(activity, callback) {
-            pending.remove(requestCode)
-            requests.remove(requestCode)
+            synchronized(hooks) {
+                pending.remove(requestCode)
+                requests.remove(requestCode)
+                if (pending.isEmpty()) hooks.clear()
+            }
         }
         if (request == null) {
+            if (pending.isEmpty()) hooks.clear()
             callback(DocumentResult("聊天分组文件任务较多，请稍后重试"))
             return
         }
@@ -961,8 +964,7 @@ private object ConversationGroupDocumentBridge {
         }
     }
 
-    @Synchronized
-    fun cancelAll() {
+    fun cancelAll() = synchronized(hooks) {
         requests.values.toList().forEach { it.cancel() }
         pending.clear()
         hooks.clear()
@@ -978,24 +980,34 @@ private object ConversationGroupDocumentBridge {
         error("文件选择请求已满")
     }
 
+    private fun onHostFailure(activity: Activity, code: Int) {
+        val value = pending[code] ?: return
+        if (value.request.activity.get() === activity && pending.remove(code, value)) value.request.cancel()
+    }
+
     private fun onResult(activity: Activity, code: Int, resultCode: Int, data: Intent?) {
         val value = pending[code] ?: return
         val request = value.request
         if (request.activity.get() !== activity || !pending.remove(code, value)) return
-        val uri = data?.data
-        if (resultCode != Activity.RESULT_OK || uri == null) {
-            request.deliver(DocumentResult(""))
-            return
-        }
-        val context = activity.applicationContext
-        val operation = value.operation
-        request.execute(
-            task = { canceled -> process(context, operation, uri, canceled) },
-            failure = { error ->
-                HLog.e("$TAG 处理聊天分组文件失败: ${error.message}", error)
-                DocumentResult(error.message ?: "处理聊天分组文件失败")
+        try {
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                request.deliver(DocumentResult(""))
+                return
             }
-        )
+            val context = activity.applicationContext
+            val operation = value.operation
+            request.execute(
+                task = { canceled -> process(context, operation, uri, canceled) },
+                failure = { error ->
+                    HLog.e("$TAG 处理聊天分组文件失败: ${error.message}", error)
+                    DocumentResult(error.message ?: "处理聊天分组文件失败")
+                }
+            )
+        } catch (error: Throwable) {
+            request.cancel()
+            HLog.e("$TAG 处理文件选择结果失败", error)
+        }
     }
 
     private fun process(context: Context, operation: Operation, uri: android.net.Uri, canceled: AtomicBoolean): DocumentResult {
