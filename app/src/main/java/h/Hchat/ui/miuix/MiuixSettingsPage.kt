@@ -300,6 +300,8 @@ import h.Hchat.hooks.items.inputhint.InputHintStats
 import h.Hchat.hooks.items.legacychatinput.LegacyChatInputFeature
 import h.Hchat.hooks.items.legacychatinput.LegacyChatInputSettings
 import h.Hchat.hooks.items.inputhint.OutgoingMessageStatsRepository
+import h.Hchat.hooks.items.linkparse.LinkParseFeature
+import h.Hchat.hooks.items.linkparse.LinkParseSettings
 import h.Hchat.hooks.items.keepalive.WeChatKeepAliveFeature
 import h.Hchat.hooks.items.keepalive.WeChatKeepAliveRuntime
 import h.Hchat.hooks.items.keepalive.WeChatKeepAliveSettings
@@ -2664,6 +2666,7 @@ internal object HchatConfigBackup {
         MessageAffixSettings.PREFS_NAME,
         InputHintSettings.PREFS_NAME,
         LegacyChatInputSettings.PREFS_NAME,
+        LinkParseSettings.PREFS_NAME,
         AutoOriginalImageSettings.PREFS_NAME,
         AutoViewOriginalSettings.PREFS_NAME,
         AtAllNotificationBlockSettings.PREFS_NAME,
@@ -3109,6 +3112,7 @@ internal fun practicalFeatureGroups(
                 AutoReplyFeature.ID,
                 MessageAffixFeature.ID,
                 LegacyChatInputFeature.ID,
+                LinkParseFeature.ID,
                 TypingReportBlockFeature.ID,
                 PatBlockFeature.ID,
                 AutoOriginalImageFeature.ID,
@@ -3835,6 +3839,9 @@ internal fun featureSubSearchTerms(featureId: String): List<String> {
         )
         LegacyChatInputFeature.ID -> listOf(
             "恢复旧版聊天输入框", "旧版输入栏", "聊天输入栏样式", "输入栏长按语音"
+        )
+        LinkParseFeature.ID -> listOf(
+            "链接解析", "抖音", "小红书", "公开作品链接", "允许他人链接解析的聊天", "群聊仅@我触发"
         )
         MessageBlockFeature.ID -> listOf(
             "屏蔽消息", "屏蔽规则", "默认规则", "私聊规则", "群聊规则", "公众号规则", "任意消息", "关键词", "正则",
@@ -4698,6 +4705,7 @@ internal fun FeatureSettingsPage(
         ChatTimeStyleFeature.ID -> ChatTimeStyleMiuixPage(context, provider, onBack)
         InputHintFeature.ID -> InputHintMiuixPage(context, provider, onBack)
         LegacyChatInputFeature.ID -> LegacyChatInputMiuixPage(context, provider, onBack)
+        LinkParseFeature.ID -> LinkParseMiuixPage(context, provider, onBack)
         HideChatAvatarFeature.ID -> HideChatAvatarMiuixPage(context, provider, onBack)
         CustomBottomBarFeature.ID -> CustomBottomBarMiuixPage(context, provider, onBack)
         FloatingBottomBarSettings.FEATURE_ID -> FloatingBottomBarMiuixPage(context, provider, onBack)

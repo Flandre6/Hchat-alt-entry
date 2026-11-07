@@ -481,7 +481,11 @@ public final class WeChatVideoApi {
         }
     }
 
-    private String generateThumb(String videoPath) {
+    String generateThumb(String videoPath) {
+        return generateThumb(videoPath, new File(hostContext.getCacheDir(), "Hchat_media"));
+    }
+
+    String generateThumb(String videoPath, File dir) {
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         Bitmap bitmap = null;
         FileOutputStream out = null;
@@ -490,8 +494,7 @@ public final class WeChatVideoApi {
             bitmap = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
             if (bitmap == null) return "";
 
-            File dir = new File(hostContext.getCacheDir(), "Hchat_media");
-            if (!dir.isDirectory() && !dir.mkdirs()) return "";
+            if (dir == null || (!dir.isDirectory() && !dir.mkdirs())) return "";
             File file = new File(dir, "video_thumb_" + Integer.toHexString(videoPath.hashCode()) + ".jpg");
             out = new FileOutputStream(file);
             if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)) return "";

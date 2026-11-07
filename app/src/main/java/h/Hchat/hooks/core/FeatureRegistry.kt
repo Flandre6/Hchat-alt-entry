@@ -34,6 +34,7 @@ import h.Hchat.hooks.items.hotupdate.DisableHotUpdateFeature
 import h.Hchat.hooks.items.hometextcolor.HomeTextColorFeature
 import h.Hchat.hooks.items.inputhint.InputHintFeature
 import h.Hchat.hooks.items.legacychatinput.LegacyChatInputFeature
+import h.Hchat.hooks.items.linkparse.LinkParseFeature
 import h.Hchat.hooks.items.keepalive.WeChatKeepAliveFeature
 import h.Hchat.hooks.items.keywordnotify.KeywordNotificationFeature
 import h.Hchat.hooks.items.membertitle.MemberTitleFeature
@@ -148,6 +149,7 @@ object FeatureRegistry {
             .register(ChatTimeStyleFeature())
             .register(InputHintFeature())
             .register(LegacyChatInputFeature())
+            .register(LinkParseFeature())
             .register(MessageBubbleFeature())
             .register(MessageTextColorFeature())
             .register(HomeTextColorFeature())

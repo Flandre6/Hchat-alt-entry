@@ -98,6 +98,7 @@ kotlin {
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
     implementation("io.github.billywei01:fastkv:3.0.1")
     implementation(files("libs/dexkit-2.2.0-76551eb-idle.aar"))
     implementation("com.google.flatbuffers:flatbuffers-java:23.5.26")
